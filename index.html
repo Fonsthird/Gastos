@@ -791,6 +791,27 @@ function closeSheet(){
 }
 $("overlay").addEventListener("click",e=>{if(e.target===$("overlay"))closeSheet();});
 document.addEventListener("keydown",e=>{if(e.key==="Escape")closeSheet();});
+/* Deslizar hacia abajo para cerrar el panel (desde arriba del panel, o en cualquier parte si ya está hasta arriba) */
+(function(){
+  const sh=$("sheet");let y0=0,dy=0,t0=0,drag=false,track=false;
+  sh.addEventListener("touchstart",e=>{
+    if(e.touches.length!==1)return;
+    track=sh.scrollTop<=0||!!e.target.closest(".grab,.sheet-head");drag=false;dy=0;y0=e.touches[0].clientY;t0=Date.now();
+  },{passive:true});
+  sh.addEventListener("touchmove",e=>{
+    if(!track)return;
+    dy=e.touches[0].clientY-y0;
+    if(!drag){if(dy>8&&(sh.scrollTop<=0||e.target.closest(".grab,.sheet-head"))){drag=true;sh.style.transition="none";document.activeElement&&document.activeElement.blur&&document.activeElement.blur();}else if(dy<-4){track=false;return;}else return;}
+    e.preventDefault();sh.style.transform=`translateY(${Math.max(dy-8,0)}px)`;
+  },{passive:false});
+  const end=()=>{
+    if(!drag){track=false;return;}
+    drag=track=false;const v=dy/Math.max(Date.now()-t0,1);sh.style.transition="";
+    if(dy>120||(v>0.4&&dy>50)){sh.style.transform="translateY(100%)";closeSheet();setTimeout(()=>{sh.style.transform="";},260);}
+    else sh.style.transform="";
+  };
+  sh.addEventListener("touchend",end);sh.addEventListener("touchcancel",end);
+})();
 const focusLater=id=>setTimeout(()=>{const i=$(id);if(i)i.focus();},260);
 
 /* --- registrar gasto --- */
