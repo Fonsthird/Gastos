@@ -560,6 +560,7 @@ function renderInicio(){
 
   $("s-inicio").innerHTML=`
     <div class="head"><div><h1>${S.cfg.nombre?"Hola, "+esc(S.cfg.nombre):"Esta semana"}</h1><div class="sub">${S.cfg.nombre?"Semana del ":""}${fd(ws)} al ${fd(ws+6*DAY)}</div></div><div class="head-actions"><button class="icon-btn" data-go="ajustes" aria-label="Ajustes">${svg("gear",20)}</button>${addBtn}</div></div>
+    <button class="btn btn-outline btn-tall" data-act="wallet" style="width:100%">${svg("card",20)}Pegar gasto de Wallet</button>
     ${ask}
     ${main}
     ${incCard}
@@ -830,9 +831,8 @@ function sheetGasto(pre={}){
     $("gAmt").addEventListener("input",upd);
     $("gAmt").addEventListener("blur",()=>{const v=$("gAmt").value.trim();if(v&&!(parseMoney(v)>0))$("gErr").textContent="Escribe un monto mayor a 0";});
     $("gAmt").addEventListener("paste",e=>{
-      const t=(e.clipboardData||window.clipboardData).getData("text");if(!t)return;
-      const parts=t.split("|");const n=parseMoney(parts[0]);
-      if(n>0){e.preventDefault();$("gAmt").value="$"+n.toFixed(2);if(parts.length>1&&parts.slice(1).join("|").trim())$("gNote").value=parts.slice(1).join("|").trim().slice(0,80);upd();}
+      const w=parseWallet((e.clipboardData||window.clipboardData).getData("text"));
+      if(w){e.preventDefault();$("gAmt").value="$"+w.monto.toFixed(2);if(w.comercio)$("gNote").value=w.comercio;upd();}
     });
     $("gSave").onclick=()=>{
       const n=parseMoney($("gAmt").value);
@@ -843,6 +843,18 @@ function sheetGasto(pre={}){
     };
     upd();if(!pre.monto)focusLater("gAmt");
   });
+}
+
+/* --- pegar el gasto que copió el atajo de Wallet ("importe | comercio") --- */
+function parseWallet(t){
+  const parts=String(t||"").split("|"),n=parseMoney(parts[0]);
+  return n>0?{monto:r2(n),comercio:parts.slice(1).join("|").trim().slice(0,80)}:null;
+}
+async function pasteWallet(){
+  let w=null;
+  try{w=parseWallet(await navigator.clipboard.readText());}catch(e){}
+  if(w)return sheetGasto(w);
+  sheetGasto();toast("No encontré un gasto copiado");
 }
 
 /* --- capturar un monto (pagos y ajustes) --- */
@@ -1005,6 +1017,7 @@ document.addEventListener("click",e=>{
     sugs:[["Todo",debt],["Para no generar intereses",ci?ci.falta:0],["Cargos de esta semana",r2(cardCharges(ws,ws+7*DAY))]],okToast:"Pago registrado",
     onSave:m=>putDoc({id:newId("p"),tipo:"pago_tarjeta",monto:m,ts:Date.now()})});}
   if(a==="ajustes")return sheetCard();
+  if(a==="wallet")return pasteWallet();
   if(a==="fuente")return sheetFuente(el.dataset.f);
   if(a==="regvar"){const f=fuentes().find(x=>x.id===el.dataset.f),d=f&&lastPay(f);if(!d)return;
     return sheetMoney({title:f.nombre,info:`¿Cuánto te llegó el ${fday(d)}?`,prefill:0,sugs:[["Igual que la vez pasada",lastMonto(f)]],okToast:"Ingreso registrado",
