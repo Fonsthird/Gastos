@@ -1058,6 +1058,22 @@ if(window.claude&&claude.use){
   initStore();
   claude.use("sample").then(s=>{if(s){sampleFn=s;renderInicio();}}).catch(()=>{});
 }
+/* Actualización: GitHub Pages deja la página en caché 10 min y el iPhone no recarga la app al volver a ella.
+   Al abrir o regresar a la app, baja index.html sin caché; si cambió desde la última vez, recarga una sola vez. */
+async function checkUpdate(){
+  if(!/^https?:$/.test(location.protocol))return;
+  try{
+    const r=await fetch(location.pathname,{cache:"reload"});if(!r.ok)return;
+    const t=await r.text();let h=5381;for(let i=0;i<t.length;i++)h=(h*33^t.charCodeAt(i))>>>0;h=String(h);
+    const prev=localStorage.getItem("gastos-ver");localStorage.setItem("gastos-ver",h);
+    if(!prev||prev===h||sessionStorage.getItem("gastos-reloaded")===h)return;
+    const busy=$("overlay").classList.contains("open")||(document.activeElement&&document.activeElement.tagName==="INPUT");
+    if(busy){localStorage.setItem("gastos-ver",prev);return;} // reintenta la próxima vez
+    sessionStorage.setItem("gastos-reloaded",h);lsSave();location.reload();
+  }catch(e){}
+}
+checkUpdate();
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"){checkUpdate();renderAll();}});
 setInterval(()=>{autoIngresos();if(!$("overlay").classList.contains("open"))renderAll();},60000);
 </script>
 
