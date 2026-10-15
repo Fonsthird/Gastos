@@ -8,8 +8,8 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Gastos">
-<meta name="theme-color" content="#F4F2EF" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#141414" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F4F2EF" media="(prefers-color-scheme: light)" id="tcLight">
+<meta name="theme-color" content="#141414" media="(prefers-color-scheme: dark)" id="tcDark">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" type="image/png" href="icon-192.png">
 <link rel="manifest" href="manifest.json">
@@ -70,6 +70,13 @@ main{max-width:480px;margin:0 auto;padding:20px 20px calc(120px + env(safe-area-
 .btn-outline{background:var(--card);color:var(--ink);border:1.5px solid var(--ink)}
 .btn-soft{background:var(--card);color:var(--ink);border:1.5px solid var(--line);font-size:14px;padding:0 16px}
 .btn-tall{height:52px}
+.linkish{border:0;background:none;padding:0;font:inherit;color:inherit;font-weight:800;text-decoration:underline}
+.icon-btn{width:44px;height:44px;border-radius:999px;border:0;background:var(--card);color:var(--ink);display:inline-flex;align-items:center;justify-content:center;flex:none}
+.head>.head-actions,.head>.head-back{flex-direction:row;align-items:center;gap:8px;flex:none}
+.head>.head-back{gap:10px}
+.link-row{width:100%;border:0;background:transparent;color:var(--ink);display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--divider);font-size:15px;font-weight:600;text-align:left;min-height:52px}
+.link-row:last-child{border-bottom:0}
+.link-row small{color:var(--muted);font-weight:500;font-size:13px}
 .btn-block{width:100%;height:56px;font-size:16px;font-weight:800}
 .btn:disabled{opacity:.45;cursor:default}
 .grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
@@ -245,6 +252,7 @@ nav.tabs button[aria-current="page"] svg{stroke:var(--yellow)}
   <section class="screen" id="s-roomie" hidden></section>
   <section class="screen" id="s-ingresos" hidden></section>
   <section class="screen" id="s-tarjeta" hidden></section>
+  <section class="screen" id="s-ajustes" hidden></section>
   <p class="sync local" id="sync" role="status"><i></i><span>Cargando…</span></p>
 </main>
 
@@ -299,6 +307,9 @@ const ICON={
   cash:'<rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 9.5v.01M18 14.5v.01"/>',
   out:'<path d="M7 17 17 7M9 7h8v8"/>',
   plus:'<path d="M12 5v14M5 12h14"/>',
+  gear:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+  back:'<path d="M15 5l-7 7 7 7"/>',
+  chev:'<path d="M9 5l7 7-7 7"/>',
   x:'<path d="M6 6l12 12M18 6 6 18"/>',
   chart:'<path d="M4 20V11M10 20V5M16 20v-7M21 20H3"/>',
   list:'<path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/>',
@@ -316,7 +327,7 @@ const catIcon=k=>ICON[k]?k:"otros";
    gasto: cat, nota, pagador:'yo'|'yo_mitad'|'roomie_mitad', metodo:'tarjeta'|'otro'
    liq (ajuste con el roomie): dir:'in' (me pagó) | 'out' (le pagué)
    ingreso: fuente (id de la fuente o null si es extra), nombre, omitido (true si lo borraste)
-   config: {limit, fijosMes, roomie, card:{base, baseTs, alCorte, alCorteTs, corteDia, pagoDia},
+   config: {limit, fijosMes, roomie, nombre, tema:'auto'|'light'|'dark', card:{base, baseTs, alCorte, alCorteTs, corteDia, pagoDia},
             fuentes:[{id, nombre, clase:'fijo'|'variable', monto, freq:'semanal'|'quincenal'|'mensual', dia, desde}]} */
 let S={cfg:{limit:0,roomie:"Roomie",card:null},docs:[]};
 const LS="gastos-v2";
@@ -330,7 +341,7 @@ function lsLoad(){
 }
 function lsSave(){try{localStorage.setItem(LS,JSON.stringify({...S,pending:[...pending],pendingDel:[...pendingDel]}));}catch(e){}}
 function setSync(s){
-  sync=s;const el=$("sync");el.className="sync "+s;
+  const ch=sync!==s;sync=s;if(ch&&$("s-ajustes"))renderAjustes();const el=$("sync");el.className="sync "+s;
   el.querySelector("span").textContent=s==="cloud"?"Sincronizado en tu cuenta":s==="offline"?"Sin conexión: guardado en este dispositivo":"Guardado solo en este dispositivo";
 }
 const newId=p=>p+Date.now()+Math.random().toString(36).slice(2,6);
@@ -488,7 +499,7 @@ function renderInicio(){
   if(!L){
     main=`<div class="card lime" style="gap:14px"><div class="card-top"><span class="badge">Sin límite</span></div>
       <div style="display:flex;flex-direction:column;gap:2px"><div class="lbl">Llevas gastado</div><div class="big num">${money(spent)}</div>
-      <div class="desc">Pon un límite semanal abajo para saber cuánto te queda cada día.</div></div></div>`;
+      <div class="desc">Pon un límite semanal en <button class="linkish" data-go="ajustes">Ajustes</button> para saber cuánto te queda cada día.</div></div></div>`;
   }else if(spent>L){
     main=`<div class="card coral" style="gap:14px"><div class="card-top"><span class="badge">Límite rebasado</span><span class="lbl" style="font-size:13px">Límite ${money(L)}</span></div>
       <div style="display:flex;flex-direction:column;gap:2px"><div class="lbl">Te pasaste por</div><div class="big num">${money(spent-L)}</div>
@@ -548,7 +559,7 @@ function renderInicio(){
     :`<button class="card" data-go="ingresos" style="gap:6px;border:0;text-align:left;color:var(--ink);width:100%"><h2>Ingresos</h2><div class="p14">Agrega tu sueldo y tus viáticos para saber cuánto te queda cada semana.</div></button>`;
 
   $("s-inicio").innerHTML=`
-    <div class="head"><div><h1>Esta semana</h1><div class="sub">${fd(ws)} al ${fd(ws+6*DAY)}</div></div>${addBtn}</div>
+    <div class="head"><div><h1>${S.cfg.nombre?"Hola, "+esc(S.cfg.nombre):"Esta semana"}</h1><div class="sub">${S.cfg.nombre?"Semana del ":""}${fd(ws)} al ${fd(ws+6*DAY)}</div></div><div class="head-actions"><button class="icon-btn" data-go="ajustes" aria-label="Ajustes">${svg("gear",20)}</button>${addBtn}</div></div>
     ${ask}
     ${main}
     ${incCard}
@@ -561,11 +572,7 @@ function renderInicio(){
     ${sampleFn?`<div class="card"><div class="hab-head"><div class="hab-ico">${svg("chart",18)}</div><h2>Mis hábitos</h2></div>
       <div class="p14">Claude revisa tus movimientos y te sugiere una acción para la próxima semana.</div>
       <button class="btn-line" id="fbBtn" ${fbBusy?"disabled":""}>${fbBusy?"Analizando…":"Analizar mis últimas 4 semanas"}</button>
-      <p class="answer" id="fbOut">${esc(fbText)}</p></div>`:""}
-    <div class="card"><h2>Límite semanal</h2>
-      <label for="limite" class="fl" style="font-weight:600">Cuánto quieres gastar de lunes a domingo</label>
-      <div class="inline"><input id="limite" class="field amt num" inputmode="decimal" autocomplete="off" placeholder="$1,000" value="${L?"$"+L.toLocaleString("es-MX"):""}"><button class="btn btn-primary" style="height:48px;padding:0 20px" id="limBtn">Guardar</button></div>
-      <p class="err" id="limErr"></p></div>`;
+      <p class="answer" id="fbOut">${esc(fbText)}</p></div>`:""}`;
   restoreFocus(keep);
 }
 function keepFocus(){const a=document.activeElement;return a&&a.id&&a.tagName==="INPUT"&&!$("sheet").contains(a)?{id:a.id,v:a.value,s:a.selectionStart}:null;}
@@ -721,16 +728,51 @@ function renderTarjeta(){
     ${pagos.length?`<div class="list">${pagos.map(d=>rowHTML(d,"tarjeta")).join("")}</div>`:`<div class="empty">Aún no registras pagos. Usa <strong>Registrar pago</strong> cada vez que abones a la tarjeta.</div>`}`;
 }
 
+/* ===================== Ajustes ===================== */
+function applyTheme(){
+  const t=S.cfg.tema||"auto",r=document.documentElement;
+  if(t==="auto")r.removeAttribute("data-theme");else r.setAttribute("data-theme",t);
+  const c=t==="dark"?"#141414":t==="light"?"#F4F2EF":null;
+  $("tcLight").content=c||"#F4F2EF";$("tcDark").content=c||"#141414";
+}
+let ajDirty=false; // no borrar lo que estás escribiendo si llegan datos de la nube
+document.addEventListener("input",e=>{if(e.target.closest&&e.target.closest("#s-ajustes"))ajDirty=true;});
+function renderAjustes(force){
+  if(ajDirty&&!force&&tab==="ajustes")return;ajDirty=false;
+  const keep=keepFocus(),c=S.cfg,tema=c.tema||"auto";
+  const amt=n=>n?"$"+n.toLocaleString("es-MX"):"";
+  $("s-ajustes").innerHTML=`
+    <div class="head"><div class="head-back"><button class="icon-btn" data-go="inicio" aria-label="Volver a Inicio">${svg("back",20,2.4)}</button><h1>Ajustes</h1></div></div>
+    <div class="card"><h2>Apariencia</h2>
+      <div class="seg s3" id="aTema" role="group" aria-label="Tema">${[["auto","Automático"],["light","Claro"],["dark","Oscuro"]].map(x=>`<button data-v="${x[0]}" aria-pressed="${tema===x[0]}">${x[1]}</button>`).join("")}</div>
+      <p class="hint" style="margin:0">Automático sigue el modo de tu teléfono.</p></div>
+    <div class="card"><h2>Perfil</h2>
+      <div class="fgroup"><label for="aNom" class="fl">Tu nombre</label><input id="aNom" class="field" autocomplete="off" maxlength="24" placeholder="Opcional" value="${esc(c.nombre||"")}"></div>
+      <div class="fgroup"><label for="aRoom" class="fl">Nombre de tu roomie</label><input id="aRoom" class="field" autocomplete="off" maxlength="24" placeholder="Roomie" value="${esc(c.roomie&&c.roomie!=="Roomie"?c.roomie:"")}"></div></div>
+    <div class="card"><h2>Presupuesto</h2>
+      <div class="fgroup"><label for="limite" class="fl">Límite semanal (lunes a domingo)</label><input id="limite" class="field amt num" inputmode="decimal" autocomplete="off" placeholder="$1,000" value="${amt(c.limit)}">
+        <p class="err" id="limErr"></p><p class="hint" style="margin:0">Cuenta solo tu parte de cada gasto. Déjalo vacío para no usar límite.</p></div>
+      <div class="fgroup"><label for="aFijos" class="fl">Gastos fijos al mes (aprox.)</label><input id="aFijos" class="field amt num" inputmode="decimal" autocomplete="off" placeholder="$0" value="${amt(c.fijosMes)}">
+        <p class="err" id="aFijosErr"></p><p class="hint" style="margin:0">Renta, recibos y suscripciones. No cuentan en tu límite semanal.</p></div></div>
+    <button class="btn btn-primary btn-block" id="aSave">Guardar ajustes</button>
+    <div class="card" style="gap:0;padding-top:8px;padding-bottom:8px">
+      <button class="link-row" data-go="ingresos"><span>Ingresos<br><small>${fuentes().length?fuentes().map(f=>esc(f.nombre)).join(", "):"Sueldo, viáticos y su frecuencia"}</small></span>${svg("chev",18)}</button>
+      <button class="link-row" data-act="ajustes"><span>Tarjeta<br><small>${c.card?`Corte día ${c.card.corteDia||"—"} · pago día ${c.card.pagoDia||"—"}`:"Saldo, día de corte y de pago"}</small></span>${svg("chev",18)}</button></div>
+    <div class="card" style="gap:6px"><h2>Tus datos</h2>
+      <div class="p14">${sync==="cloud"?"Se guardan en tu cuenta y se sincronizan entre tus dispositivos.":"Se guardan en este dispositivo."} Tienes ${S.docs.filter(d=>!d.omitido).length} movimientos registrados.</div></div>`;
+  restoreFocus(keep);
+}
+
 /* ===================== navegación ===================== */
 const TABS=[["inicio","Inicio","casa"],["movimientos","Movimientos","list"],["ingresos","Ingresos","cash"],["roomie","Roomie","people"],["tarjeta","Tarjeta","card"]];
 let tab="inicio";
 function renderTabs(){$("tabs").innerHTML=TABS.map(t=>`<button data-tab="${t[0]}"${t[0]===tab?' aria-current="page"':""}>${svg(t[2],22)}${t[1]}</button>`).join("");}
 function go(t){
-  tab=t;TABS.forEach(x=>$("s-"+x[0]).hidden=x[0]!==t);renderTabs();window.scrollTo(0,0);
+  tab=t;[...TABS.map(x=>x[0]),"ajustes"].forEach(x=>$("s-"+x).hidden=x!==t);renderTabs();window.scrollTo(0,0);
   try{history.replaceState(null,"","#"+t);}catch(e){}
   try{localStorage.setItem("gastos-tab",t);}catch(e){}
 }
-function renderAll(){renderInicio();renderMovs();renderIngresos();renderRoomie();renderTarjeta();}
+function renderAll(){applyTheme();renderAjustes();renderInicio();renderMovs();renderIngresos();renderRoomie();renderTarjeta();}
 
 /* ===================== panel inferior ===================== */
 let lastFocus=null,onClose=null;
@@ -978,14 +1020,22 @@ document.addEventListener("click",e=>{
 });
 document.addEventListener("click",e=>{if(e.target.id==="fbBtn")analyze();});
 document.addEventListener("click",e=>{
-  if(e.target.id!=="limBtn")return;
-  const n=parseMoney($("limite").value);
-  if(!(n>0)){$("limErr").textContent="Escribe un monto mayor a 0";return;}
-  S.cfg.limit=r2(n);$("limite").blur();saveCfg();toast("Límite guardado");
+  const tb=e.target.closest("#aTema button");
+  if(tb){S.cfg.tema=tb.dataset.v;applyTheme();tb.parentNode.querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",String(x===tb)));saveCfg();return;}
+  if(!e.target.closest("#aSave"))return;
+  $("limErr").textContent="";$("aFijosErr").textContent="";
+  const lv=$("limite").value.trim(),fv=$("aFijos").value.trim(),l=parseMoney(lv),f=parseMoney(fv);
+  let bad=false;
+  if(lv&&!(l>0)){$("limErr").textContent="Escribe un monto mayor a 0 o déjalo vacío";bad=true;}
+  if(fv&&!(f>=0)){$("aFijosErr").textContent="Escribe un monto válido o déjalo vacío";bad=true;}
+  if(bad)return;
+  S.cfg.limit=lv?r2(l):0;S.cfg.fijosMes=fv?r2(f):0;
+  S.cfg.nombre=$("aNom").value.trim().slice(0,24);S.cfg.roomie=$("aRoom").value.trim().slice(0,24)||"Roomie";
+  document.activeElement&&document.activeElement.blur&&document.activeElement.blur();ajDirty=false;saveCfg();toast("Ajustes guardados");
 });
 document.addEventListener("keydown",e=>{
   if(e.key!=="Enter"||!e.target||e.target.tagName!=="INPUT")return;
-  const map={limite:"limBtn",cardStart:null,rnIn:"rnSave",mAmt:"mSave"};
+  const map={limite:"aSave",aFijos:"aSave",aNom:"aSave",aRoom:"aSave",cardStart:null,rnIn:"rnSave",mAmt:"mSave"};
   if(e.target.id==="cardStart"){document.querySelector('[data-act="cardstart"]').click();return;}
   const b=map[e.target.id]&&$(map[e.target.id]);if(b){e.preventDefault();b.click();}
 });
@@ -996,7 +1046,8 @@ let tt;function toast(m){const t=$("toast");t.textContent=m;t.classList.add("sho
 lsLoad();
 if(fixCard()){pending.add("config");lsSave();}
 {let start="inicio";const h=(location.hash||"").replace("#","");
-  if(TABS.some(t=>t[0]===h))start=h;else{try{const s=localStorage.getItem("gastos-tab");if(TABS.some(t=>t[0]===s))start=s;}catch(e){}}
+  const ok=x=>x==="ajustes"||TABS.some(t=>t[0]===x);
+  if(ok(h))start=h;else{try{const s=localStorage.getItem("gastos-tab");if(ok(s))start=s;}catch(e){}}
   renderAll();go(start);}
 setSync("local");
 // Datos del Atajo de Wallet: ?monto=…&comercio=… (si el enlace los trae)
