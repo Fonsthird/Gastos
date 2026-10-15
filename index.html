@@ -79,6 +79,7 @@ main{max-width:480px;margin:0 auto;padding:20px 20px calc(120px + env(safe-area-
 .card.lime{background:var(--lime);color:var(--on)}
 .card.coral{background:var(--coral);color:var(--on)}
 .card.tight{gap:6px}
+.card.ask{box-shadow:inset 0 0 0 2px var(--yellow)}
 .card h2{font-size:18px;font-weight:800}
 .card-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .badge{font-size:13px;font-weight:700;background:var(--on);color:var(--lime);padding:6px 12px;border-radius:999px;white-space:nowrap}
@@ -159,6 +160,7 @@ main{max-width:480px;margin:0 auto;padding:20px 20px calc(120px + env(safe-area-
 .item .a b{font-size:16px;font-weight:800}
 .item .a small{font-size:12px;color:var(--muted);font-weight:500}
 .item .a small.pos{color:var(--pos);font-weight:600}
+.item .a b.pos{color:var(--pos)}
 .item .a small.neg{color:var(--neg);font-weight:600}
 .empty{background:var(--card);border-radius:20px;padding:20px;font-size:15px;color:var(--muted);font-weight:500}
 .empty strong{color:var(--ink)}
@@ -186,8 +188,8 @@ h2.sec{font-size:18px;font-weight:800;margin-top:8px}
 
 /* Navegación */
 nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:20;background:var(--nav);border-radius:24px 24px 0 0;padding:10px 12px calc(12px + env(safe-area-inset-bottom,0px))}
-nav.tabs .in{max-width:480px;margin:0 auto;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
-nav.tabs button{border:0;background:transparent;display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0;min-height:52px;border-radius:16px;color:var(--nav-ink);font-size:11px;font-weight:600}
+nav.tabs .in{max-width:480px;margin:0 auto;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px}
+nav.tabs button{border:0;background:transparent;display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0;min-height:52px;border-radius:16px;color:var(--nav-ink);font-size:10.5px;font-weight:600;white-space:nowrap}
 nav.tabs button[aria-current="page"]{background:var(--nav-on);color:#FFFFFF;font-weight:700}
 nav.tabs button[aria-current="page"] svg{stroke:var(--yellow)}
 
@@ -214,6 +216,10 @@ nav.tabs button[aria-current="page"] svg{stroke:var(--yellow)}
 .seg{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;background:var(--bg);padding:4px;border-radius:999px}
 .seg button{height:44px;border:0;border-radius:999px;background:transparent;color:var(--ink);font-size:15px;font-weight:600}
 .seg button[aria-pressed="true"]{background:var(--sel);color:var(--sel-ink);font-weight:700}
+.seg.s3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.days button{height:44px;border:1.5px solid var(--divider);border-radius:14px;background:var(--card);color:var(--ink);font-size:14px;font-weight:600;padding:0}
+.days button[aria-pressed="true"]{border-color:var(--sel);background:var(--sel);color:var(--sel-ink);font-weight:700}
 .mine{background:var(--bg);border-radius:14px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;gap:12px}
 .mine span{font-size:13px;font-weight:500;color:var(--muted);line-height:1.4}
 .mine b{font-size:20px;font-weight:800}
@@ -237,6 +243,7 @@ nav.tabs button[aria-current="page"] svg{stroke:var(--yellow)}
   <section class="screen" id="s-inicio"></section>
   <section class="screen flush" id="s-movimientos" hidden></section>
   <section class="screen" id="s-roomie" hidden></section>
+  <section class="screen" id="s-ingresos" hidden></section>
   <section class="screen" id="s-tarjeta" hidden></section>
   <p class="sync local" id="sync" role="status"><i></i><span>Cargando…</span></p>
 </main>
@@ -289,6 +296,7 @@ const ICON={
   otros:'<path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5zM3 7.5l9 4.5 9-4.5M12 12v9"/>',
   card:'<rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 10h19M6.5 15h4"/>',
   check:'<path d="M5 12l5 5 9-10"/>',
+  cash:'<rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 9.5v.01M18 14.5v.01"/>',
   out:'<path d="M7 17 17 7M9 7h8v8"/>',
   plus:'<path d="M12 5v14M5 12h14"/>',
   x:'<path d="M6 6l12 12M18 6 6 18"/>',
@@ -307,11 +315,13 @@ const catIcon=k=>ICON[k]?k:"otros";
    Movimientos: {id, tipo:'gasto'|'pago_tarjeta'|'liq', monto, ts, ...}
    gasto: cat, nota, pagador:'yo'|'yo_mitad'|'roomie_mitad', metodo:'tarjeta'|'otro'
    liq (ajuste con el roomie): dir:'in' (me pagó) | 'out' (le pagué)
-   config: {limit, fijosMes, roomie, card:{base, baseTs, alCorte, alCorteTs, corteDia, pagoDia}} */
+   ingreso: fuente (id de la fuente o null si es extra), nombre, omitido (true si lo borraste)
+   config: {limit, fijosMes, roomie, card:{base, baseTs, alCorte, alCorteTs, corteDia, pagoDia},
+            fuentes:[{id, nombre, clase:'fijo'|'variable', monto, freq:'semanal'|'quincenal'|'mensual', dia, desde}]} */
 let S={cfg:{limit:0,roomie:"Roomie",card:null},docs:[]};
 const LS="gastos-v2";
 const pending=new Set(), pendingDel=new Set();
-let store=null, flushing=false, sync="local";
+let store=null, flushing=false, sync="local", ready=false;
 
 function lsLoad(){
   try{const s=JSON.parse(localStorage.getItem(LS)||"null");
@@ -348,7 +358,7 @@ async function initStore(){
   let db=null,user=null;
   try{[db,user]=await Promise.all([claude.use("db"),claude.use("user")]);}catch(e){}
   const uid=user?await user.id():null;
-  if(!db||!uid){setSync("local");return;}
+  if(!db||!uid){setSync("local");ready=true;autoIngresos();return;}
   const col=db.collection("data/users/"+uid);
   store={put:d=>col.doc(d.id).set(d),del:id=>col.doc(id).delete(),cfg:c=>col.doc("config").set(c)};
   col.onSnapshot(snap=>{
@@ -358,6 +368,7 @@ async function initStore(){
     S.docs.forEach(d=>{if(pending.has(d.id))map.set(d.id,d);});
     if(!pending.has("config")){if(cfg){S.cfg={limit:0,roomie:"Roomie",card:null,...cfg};if(fixCard())pending.add("config");}else pending.add("config");}
     S.docs=[...map.values()];
+    ready=true;autoIngresos();
     lsSave();renderAll();
     if(pending.size||pendingDel.size)flush();else setSync("cloud");
   },()=>setSync("offline"));
@@ -399,6 +410,39 @@ function cutInfo(){ // para no generar intereses
   const paid=S.docs.filter(d=>tipo(d)==="pago_tarjeta"&&d.ts>=lc.getTime()).reduce((s,d)=>s+d.monto,0);
   return {lc,paid:r2(paid),falta:r2(Math.max(c.alCorte-paid,0)),stale:c.alCorteTs&&c.alCorteTs<lc.getTime()};
 }
+/* ingresos: fuentes con frecuencia. Cada pago tiene id fijo (fuente + fecha) para no duplicarse entre dispositivos. */
+const fuentes=()=>S.cfg.fuentes||[];
+const ingresos=()=>S.docs.filter(d=>tipo(d)==="ingreso"&&!d.omitido);
+const ymd=d=>d.getFullYear()+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0");
+const payId=(f,d)=>"i"+f.id+"_"+ymd(d);
+function payDates(f,a,b){ // fechas de pago (medianoche) entre a y b, inclusive
+  const out=[],t=new Date(a);t.setHours(0,0,0,0);
+  for(;t.getTime()<=b;t.setDate(t.getDate()+1)){
+    const day=t.getDate(),last=dim(t.getFullYear(),t.getMonth());
+    if(f.freq==="semanal"?t.getDay()===f.dia:f.freq==="quincenal"?(day===15||day===last):day===Math.min(f.dia,last))out.push(new Date(t));
+  }
+  return out;
+}
+function freqText(f){
+  return f.freq==="semanal"?"Cada "+DIA[f.dia]:f.freq==="quincenal"?"Cada quincena (15 y fin de mes)":"Cada mes, el día "+f.dia;
+}
+function lastPay(f){ // último pago que ya debió llegar, desde que agregaste la fuente
+  const d=payDates(f,Math.max(f.desde,Date.now()-62*DAY),Date.now()).pop();return d||null;
+}
+function nextPay(f){const t=new Date();t.setHours(0,0,0,0);const d=payDates(f,t.getTime()+DAY,t.getTime()+62*DAY)[0];return d?{date:d,days:Math.round((d-t)/DAY)}:null;}
+function lastMonto(f){const a=ingresos().filter(d=>d.fuente===f.id).sort((x,y)=>y.ts-x.ts);return a.length?a[0].monto:0;}
+function pendientes(){ // ingresos variables que ya llegaron y no has registrado
+  return fuentes().filter(f=>f.clase==="variable").map(f=>({f,d:lastPay(f)})).filter(x=>x.d&&!S.docs.some(d=>d.id===payId(x.f,x.d)));
+}
+function autoIngresos(){ // registra solos los ingresos fijos en su día
+  if(!ready)return;let n=0;const now=Date.now();
+  fuentes().filter(f=>f.clase==="fijo"&&f.monto>0).forEach(f=>payDates(f,Math.max(f.desde,now-62*DAY),now).forEach(d=>{
+    const id=payId(f,d);if(S.docs.some(x=>x.id===id))return;
+    S.docs.push({id,tipo:"ingreso",fuente:f.id,nombre:f.nombre,monto:f.monto,ts:d.getTime()+9*3600e3});pending.add(id);n++;
+  }));
+  if(n){lsSave();flush();}
+}
+function weekIncome(ws){return ingresos().filter(d=>d.ts>=ws&&d.ts<ws+7*DAY).reduce((s,d)=>s+d.monto,0);}
 function cardCharges(a,b){const c=S.cfg.card;return S.docs.filter(d=>d.ts>=a&&d.ts<b&&(!c||d.ts>=c.baseTs)&&onCard(d)).reduce((s,d)=>s+d.monto,0);}
 
 /* ===================== filas de movimientos ===================== */
@@ -416,6 +460,10 @@ function rowHTML(d,ctx){
     }
     return `<button class="item" data-id="${d.id}"><span class="ico">${svg(catIcon(d.cat))}</span><span class="tx"><span class="n"><span>${esc(d.nota||catName(d.cat))}</span>${sh&&ctx!=="roomie"?'<em class="half" style="font-style:normal">½</em>':""}</span><span class="m">${meta}</span></span><span class="a">${right}</span></button>`;
   }
+  if(t==="ingreso"){
+    const f=fuentes().find(x=>x.id===d.fuente),cl=f?(f.clase==="fijo"?"Fijo":"Variable"):"Extra";
+    return `<button class="item" data-id="${d.id}"><span class="ico lime">${svg("cash")}</span><span class="tx"><span class="n"><span>${esc(d.nombre||"Ingreso")}</span></span><span class="m">Ingreso ${cl.toLowerCase()} · ${ctx==="ingresos"?fday(d.ts):fhm(d.ts)}</span></span><span class="a"><b class="num pos">+${money(d.monto)}</b></span></button>`;
+  }
   if(t==="pago_tarjeta")
     return `<button class="item" data-id="${d.id}"><span class="ico lime">${svg("card")}</span><span class="tx"><span class="n"><span>Pago a tarjeta</span></span><span class="m">${ctx==="tarjeta"?fday(d.ts):"Abono · "+fhm(d.ts)}</span></span><span class="a"><b class="num">${money(d.monto)}</b></span></button>`;
   const inn=d.dir==="in";
@@ -423,7 +471,7 @@ function rowHTML(d,ctx){
 }
 function groupedHTML(arr,ctx){
   const by=[];let last=null;
-  arr.slice().sort((a,b)=>b.ts-a.ts).forEach(d=>{const k=new Date(d.ts).toDateString();if(k!==last){last=k;by.push({ts:d.ts,items:[]});}by[by.length-1].items.push(d);});
+  arr.filter(d=>!d.omitido).sort((a,b)=>b.ts-a.ts).forEach(d=>{const k=new Date(d.ts).toDateString();if(k!==last){last=k;by.push({ts:d.ts,items:[]});}by[by.length-1].items.push(d);});
   return by.map(g=>`<div class="group"><div class="day">${fday(g.ts)}</div><div class="list">${g.items.map(d=>rowHTML(d,ctx)).join("")}</div></div>`).join("");
 }
 const addBtn=`<button class="btn btn-add" data-add>${svg("plus",18,2.4)}Gasto</button>`;
@@ -484,9 +532,23 @@ function renderInicio(){
     :`<div style="font-size:15px;font-weight:600" class="num">${money(fp)} <span class="muted" style="font-weight:500">pagados este mes</span></div>
       <div class="p14">Registra recibos y suscripciones con la categoría Fijos. No cuentan en tu límite semanal.</div>`;
 
+  // ingresos de la semana
+  const inc=weekIncome(ws),allSpent=gastos().filter(g=>g.ts>=ws&&g.ts<ws+7*DAY).reduce((s,g)=>s+mine(g),0);
+  const pend=pendientes();
+  const ask=pend.map(x=>`<div class="card ask" style="gap:12px"><div class="card-top"><h2>¿Cuánto te llegó de ${esc(x.f.nombre)}?</h2></div>
+      <div class="p14">Te pagan ${freqText(x.f).toLowerCase()}. Registra lo de este ${fday(x.d)}.</div>
+      <button class="btn btn-primary btn-block" data-act="regvar" data-f="${x.f.id}">Registrar ${esc(x.f.nombre)}</button></div>`).join("");
+  const incCard=fuentes().length||inc?`<button class="card" data-go="ingresos" style="gap:10px;border:0;text-align:left;color:var(--ink);width:100%">
+      <div class="card-top"><h2>Ingresos de la semana</h2><span class="chip plain">Ver</span></div>
+      <div class="split"><div><span>Te entró</span><span class="num">${money(inc)}</span></div><div><span>Gastaste (tu parte, con Fijos)</span><span class="num">−${money(allSpent)}</span></div>
+      <div style="font-size:16px;font-weight:800"><span>Te queda</span><span class="num">${money(inc-allSpent)}</span></div></div></button>`
+    :`<button class="card" data-go="ingresos" style="gap:6px;border:0;text-align:left;color:var(--ink);width:100%"><h2>Ingresos</h2><div class="p14">Agrega tu sueldo y tus viáticos para saber cuánto te queda cada semana.</div></button>`;
+
   $("s-inicio").innerHTML=`
     <div class="head"><div><h1>Esta semana</h1><div class="sub">${fd(ws)} al ${fd(ws+6*DAY)}</div></div>${addBtn}</div>
+    ${ask}
     ${main}
+    ${incCard}
     <div class="grid2">
       <button class="mini" data-go="roomie"><span class="row"><span class="t">${esc(rName())}</span>${rChip}</span><span class="v num">${money(Math.abs(rb))}</span><span class="h">Ver cuentas</span></button>
       <button class="mini" data-go="tarjeta"><span class="row"><span class="t">Tarjeta</span>${tChip}</span><span class="v num">${tVal}</span><span class="h">${tHint}</span></button>
@@ -509,10 +571,11 @@ function restoreFocus(k){if(!k)return;const i=$(k.id);if(!i)return;i.value=k.v;i
 async function analyze(){
   if(!sampleFn||fbBusy)return;
   const since=weekStart()-21*DAY;
-  const lines=S.docs.filter(d=>d.ts>=since).sort((a,b)=>a.ts-b.ts).map(d=>{
+  const lines=S.docs.filter(d=>d.ts>=since&&!d.omitido).sort((a,b)=>a.ts-b.ts).map(d=>{
     const dt=fday(d.ts)+" "+fhm(d.ts),t=tipo(d);
     if(t==="gasto")return `${dt} | gasto | ${catName(d.cat)} | total ${d.monto} | mi parte ${r2(mine(d))} | ${d.pagador==="yo_mitad"?"pagué yo, mitad roomie":d.pagador==="roomie_mitad"?"pagó roomie, mitad mía":"solo yo"} | ${d.pagador==="roomie_mitad"?"-":((d.metodo||"tarjeta")==="tarjeta"?"tarjeta":"efectivo/débito")} | ${d.nota||""}`;
     if(t==="pago_tarjeta")return `${dt} | pago a tarjeta | ${d.monto}`;
+    if(t==="ingreso")return d.omitido?"":`${dt} | ingreso | ${d.nombre||"ingreso"} | ${d.monto}`;
     return `${dt} | ajuste roomie | ${d.dir==="in"?"roomie me pagó":"le pagué al roomie"} ${d.monto}`;}).join("\n");
   if(!lines){fbText="Registra gastos unos días y luego pide el análisis.";renderInicio();return;}
   const debt=cardDebt(),ci=cutInfo();
@@ -524,6 +587,7 @@ Contexto:
 - Límite semanal: ${S.cfg.limit?S.cfg.limit+" MXN, sobre su parte de cada gasto":"no definido"}. La categoría Fijos (recibos y suscripciones, ~${S.cfg.fijosMes||"?"} MXN al mes) no cuenta en el límite.
 - Tarjeta: deuda estimada ${debt==null?"no configurada":debt+" MXN"}${ci?`; le falta pagar ${ci.falta} MXN del saldo del corte para no generar intereses`:""}. Meta: pagar cada semana lo que cargó esa semana.
 - Saldo con el roomie: ${roomieBalance()} MXN (positivo = el roomie le debe).
+- Ingresos: ${fuentes().length?fuentes().map(f=>`${f.nombre} (${f.clase}${f.clase==="fijo"?" "+f.monto+" MXN":""}, ${freqText(f).toLowerCase()})`).join("; "):"no registrados"}.
 
 Movimientos de las últimas 4 semanas (fecha | tipo | categoría | total | mi parte | quién pagó | método | nota):
 ${lines}
@@ -544,7 +608,7 @@ Incluye: 1) cómo va contra su límite esta semana y las anteriores; 2) dos o tr
 }
 
 /* ===================== Movimientos ===================== */
-const FILTERS=[["semana","Esta semana"],["pasada","Semana pasada"],["mes","Este mes"],["compartidos","Compartidos"],["pagos","Pagos a tarjeta"]];
+const FILTERS=[["semana","Esta semana"],["pasada","Semana pasada"],["mes","Este mes"],["ingresos","Ingresos"],["compartidos","Compartidos"],["pagos","Pagos a tarjeta"]];
 let filter="semana";
 function renderMovs(){
   const ws=weekStart(),d0=new Date(),ms=new Date(d0.getFullYear(),d0.getMonth(),1).getTime();
@@ -552,13 +616,15 @@ function renderMovs(){
   const arr=filter==="semana"?S.docs.filter(d=>d.ts>=ws)
     :filter==="pasada"?S.docs.filter(d=>d.ts>=ws-7*DAY&&d.ts<ws)
     :filter==="mes"?S.docs.filter(d=>d.ts>=ms)
+    :filter==="ingresos"?ingresos()
     :filter==="compartidos"?S.docs.filter(isShared)
     :S.docs.filter(d=>tipo(d)==="pago_tarjeta");
-  const total=filter==="pagos"?arr.reduce((s,d)=>s+d.monto,0):arr.filter(d=>tipo(d)==="gasto").reduce((s,g)=>s+mine(g),0);
-  const emptyMsg={semana:"No hay movimientos esta semana. Toca <strong>+ Gasto</strong> para registrar el primero.",pasada:"No registraste movimientos la semana pasada.",mes:"No hay movimientos este mes.",compartidos:"Aquí aparecen los gastos divididos con tu roomie y los ajustes de cuentas. Al registrar un gasto, elige quién pagó.",pagos:"Aún no registras pagos a la tarjeta. Hazlo desde la sección Tarjeta."}[filter];
+  if(filter!=="ingresos")for(let i=arr.length-1;i>=0;i--)if(arr[i].omitido)arr.splice(i,1);
+  const total=filter==="pagos"||filter==="ingresos"?arr.reduce((s,d)=>s+d.monto,0):arr.filter(d=>tipo(d)==="gasto").reduce((s,g)=>s+mine(g),0);
+  const emptyMsg={semana:"No hay movimientos esta semana. Toca <strong>+ Gasto</strong> para registrar el primero.",pasada:"No registraste movimientos la semana pasada.",mes:"No hay movimientos este mes.",compartidos:"Aquí aparecen los gastos divididos con tu roomie y los ajustes de cuentas. Al registrar un gasto, elige quién pagó.",pagos:"Aún no registras pagos a la tarjeta. Hazlo desde la sección Tarjeta.",ingresos:"Aún no registras ingresos. Agrégalos en la sección Ingresos."}[filter];
   const sc=$("s-movimientos"),fx=sc.querySelector(".filters"),sl=fx?fx.scrollLeft:0;
   sc.innerHTML=`
-    <div class="pad head"><div><h1>Movimientos</h1><div class="sub">${filter==="pagos"?"Pagado":"Tu parte"}: <strong class="num">${money(total)}</strong></div></div>${addBtn}</div>
+    <div class="pad head"><div><h1>Movimientos</h1><div class="sub">${filter==="pagos"?"Pagado":filter==="ingresos"?"Te entró":"Tu parte"}: <strong class="num">${money(total)}</strong></div></div>${addBtn}</div>
     <div class="filters" role="group" aria-label="Filtrar movimientos">${FILTERS.map(f=>`<button class="filter" data-filter="${f[0]}" aria-pressed="${f[0]===filter}">${f[1]}</button>`).join("")}</div>
     <div class="pad" style="display:flex;flex-direction:column;gap:16px">${arr.length?groupedHTML(arr,"movs"):`<div class="empty">${emptyMsg}</div>`}</div>`;
   sc.querySelector(".filters").scrollLeft=sl;
@@ -578,6 +644,26 @@ function renderRoomie(){
     <div class="hint" style="padding:0 4px">Si te regresa dinero de algo que pagaste con tarjeta, abónalo a la tarjeta.</div>
     <h2 class="sec">Historial compartido</h2>
     ${arr.length?groupedHTML(arr,"roomie"):`<div class="empty">Aún no hay gastos compartidos. Al registrar un gasto elige <strong>Pagué yo, mitad de mi roomie</strong> o <strong>Pagó mi roomie, mitad mía</strong>.</div>`}`;
+}
+
+/* ===================== Ingresos ===================== */
+function renderIngresos(){
+  const ws=weekStart(),F=fuentes(),inc=weekIncome(ws);
+  const fijo=F.filter(f=>f.clase==="fijo").reduce((s,f)=>s+(f.freq==="semanal"?f.monto:0),0);
+  const src=F.length?`<div class="list">${F.map(f=>{const np=nextPay(f);
+      return `<button class="item" data-act="fuente" data-f="${f.id}"><span class="ico ${f.clase==="fijo"?"lime":""}">${svg("cash")}</span><span class="tx"><span class="n"><span>${esc(f.nombre)}</span></span><span class="m">${f.clase==="fijo"?"Fijo":"Variable"} · ${freqText(f)}${np?" · próximo "+inDays(np.days):""}</span></span><span class="a"><b class="num">${f.clase==="fijo"?money(f.monto):"Variable"}</b>${f.clase==="variable"&&lastMonto(f)?`<small class="num">último ${money(lastMonto(f))}</small>`:""}</span></button>`;}).join("")}</div>`
+    :`<div class="empty">Aún no agregas ingresos. Agrega tu sueldo como <strong>fijo</strong> y tus viáticos como <strong>variable</strong>.</div>`;
+  const hist=ingresos().filter(d=>d.ts>=ws-28*DAY);
+  $("s-ingresos").innerHTML=`
+    <div class="head"><div><h1>Ingresos</h1><div class="sub">Lo que te entra cada semana</div></div><button class="btn btn-add" data-act="fuente">${svg("plus",18,2.4)}Agregar</button></div>
+    <div class="card lime" style="gap:6px"><div class="lbl">Te entró esta semana</div><div class="big num">${money(inc)}</div>
+      <div class="desc">${fd(ws)} al ${fd(ws+6*DAY)}${fijo?` · fijo semanal ${money(fijo)}`:""}</div></div>
+    <h2 class="sec">Tus ingresos</h2>
+    ${src}
+    <div class="hint" style="padding:0 4px">Los <strong>fijos</strong> se registran solos en su día. En los <strong>variables</strong> la app te pregunta cuánto te llegó.</div>
+    <button class="btn btn-outline btn-tall" data-act="extra">Registrar ingreso extra</button>
+    <h2 class="sec">Últimas 4 semanas</h2>
+    ${hist.length?groupedHTML(hist,"ingresos"):`<div class="empty">Aquí aparecerán tus ingresos registrados.</div>`}`;
 }
 
 /* ===================== Tarjeta ===================== */
@@ -633,7 +719,7 @@ function renderTarjeta(){
 }
 
 /* ===================== navegación ===================== */
-const TABS=[["inicio","Inicio","casa"],["movimientos","Movimientos","list"],["roomie","Roomie","people"],["tarjeta","Tarjeta","card"]];
+const TABS=[["inicio","Inicio","casa"],["movimientos","Movimientos","list"],["ingresos","Ingresos","cash"],["roomie","Roomie","people"],["tarjeta","Tarjeta","card"]];
 let tab="inicio";
 function renderTabs(){$("tabs").innerHTML=TABS.map(t=>`<button data-tab="${t[0]}"${t[0]===tab?' aria-current="page"':""}>${svg(t[2],22)}${t[1]}</button>`).join("");}
 function go(t){
@@ -641,7 +727,7 @@ function go(t){
   try{history.replaceState(null,"","#"+t);}catch(e){}
   try{localStorage.setItem("gastos-tab",t);}catch(e){}
 }
-function renderAll(){renderInicio();renderMovs();renderRoomie();renderTarjeta();}
+function renderAll(){renderInicio();renderMovs();renderIngresos();renderRoomie();renderTarjeta();}
 
 /* ===================== panel inferior ===================== */
 let lastFocus=null,onClose=null;
@@ -765,6 +851,54 @@ function sheetCard(){
   });
 }
 
+/* --- fuente de ingreso --- */
+function sheetFuente(id){
+  const f=fuentes().find(x=>x.id===id)||null;
+  let clase=f?f.clase:"fijo",freq=f?f.freq:"semanal",dia=f&&f.freq==="semanal"?f.dia:5;
+  const DS=[[1,"L"],[2,"M"],[3,"M"],[4,"J"],[5,"V"],[6,"S"],[0,"D"]];
+  openSheet(f?"Editar ingreso":"Nuevo ingreso",`
+    <div class="fgroup"><label for="fNom" class="fl">Nombre</label>
+      <input id="fNom" class="field" autocomplete="off" maxlength="30" placeholder="Sueldo, Viáticos…" value="${esc(f?f.nombre:"")}"><p class="err" id="fNomErr"></p></div>
+    <div class="fgroup g8"><div class="fl" id="fClLbl">Tipo</div>
+      <div class="seg" id="fCl" role="group" aria-labelledby="fClLbl"><button data-v="fijo" aria-pressed="${clase==="fijo"}">Fijo</button><button data-v="variable" aria-pressed="${clase==="variable"}">Variable</button></div>
+      <p class="hint" id="fClHint"></p></div>
+    <div class="fgroup" id="fMonWrap"><label for="fMon" class="fl">Monto de cada pago</label>
+      <input id="fMon" class="field amt num" inputmode="decimal" autocomplete="off" placeholder="$0.00" value="${f&&f.monto?"$"+f.monto.toFixed(2):""}"><p class="err" id="fMonErr"></p></div>
+    <div class="fgroup g8"><div class="fl" id="fFrLbl">¿Cada cuánto te pagan?</div>
+      <div class="seg s3" id="fFr" role="group" aria-labelledby="fFrLbl">${[["semanal","Semanal"],["quincenal","Quincenal"],["mensual","Mensual"]].map(x=>`<button data-v="${x[0]}" aria-pressed="${freq===x[0]}">${x[1]}</button>`).join("")}</div></div>
+    <div class="fgroup g8" id="fDiaWrap"><div class="fl" id="fDiaLbl">Día de pago</div>
+      <div class="days" id="fDia" role="group" aria-labelledby="fDiaLbl">${DS.map(x=>`<button data-v="${x[0]}" aria-label="${DIA[x[0]]}" aria-pressed="${dia===x[0]}">${x[1]}</button>`).join("")}</div></div>
+    <div class="fgroup" id="fMesWrap"><label for="fMes" class="fl">Día del mes</label>
+      <input id="fMes" class="field num" inputmode="numeric" autocomplete="off" placeholder="1" value="${f&&f.freq==="mensual"?f.dia:""}"><p class="err" id="fMesErr"></p></div>
+    <p class="hint" id="fQHint">Te pagan el 15 y el último día de cada mes.</p>
+    <button class="btn btn-primary btn-block" id="fSave">Guardar ingreso</button>
+    ${f?`<button class="del" id="fDel">Quitar este ingreso</button>`:""}`,()=>{
+    const upd=()=>{
+      $("fMonWrap").hidden=clase!=="fijo";
+      $("fClHint").textContent=clase==="fijo"?"Siempre es el mismo monto. Se registra solo en su día.":"Cambia cada vez. En su día la app te pregunta cuánto te llegó.";
+      $("fDiaWrap").hidden=freq!=="semanal";$("fMesWrap").hidden=freq!=="mensual";$("fQHint").hidden=freq!=="quincenal";
+    };
+    const pick=(wrap,fn)=>$(wrap).addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;fn(b.dataset.v);$(wrap).querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));upd();});
+    pick("fCl",v=>clase=v);pick("fFr",v=>freq=v);pick("fDia",v=>dia=Number(v));
+    $("fSave").onclick=()=>{
+      ["fNomErr","fMonErr","fMesErr"].forEach(i=>$(i).textContent="");
+      const nom=$("fNom").value.trim(),mon=parseMoney($("fMon").value),mes=Number($("fMes").value.trim());
+      let bad=false;
+      if(!nom){$("fNomErr").textContent="Escribe un nombre";bad=true;}
+      if(clase==="fijo"&&!(mon>0)){$("fMonErr").textContent="Escribe un monto mayor a 0";bad=true;}
+      if(freq==="mensual"&&!(Number.isInteger(mes)&&mes>=1&&mes<=31)){$("fMesErr").textContent="El día debe ser entre 1 y 31";bad=true;}
+      if(bad)return;
+      const t=new Date();t.setHours(0,0,0,0);
+      const nf={id:f?f.id:"f"+Date.now().toString(36),nombre:nom.slice(0,30),clase,monto:clase==="fijo"?r2(mon):0,freq,dia:freq==="semanal"?dia:freq==="mensual"?mes:0,
+        desde:f&&f.freq===freq&&f.dia===(freq==="semanal"?dia:freq==="mensual"?mes:0)?f.desde:t.getTime()};
+      S.cfg.fuentes=[...fuentes().filter(x=>x.id!==nf.id),nf];
+      autoIngresos();saveCfg();closeSheet();toast("Ingreso guardado");
+    };
+    if(f)$("fDel").onclick=()=>{S.cfg.fuentes=fuentes().filter(x=>x.id!==f.id);saveCfg();closeSheet();toast("Ingreso quitado. Lo ya registrado se conserva.");};
+    upd();if(!f)focusLater("fNom");
+  });
+}
+
 /* --- detalle de un movimiento --- */
 function sheetDetail(id){
   const d=S.docs.find(x=>x.id===id);if(!d)return;
@@ -776,6 +910,9 @@ function sheetDetail(id){
       ["Quién pagó",d.pagador==="roomie_mitad"?R:"Tú"],
       ["División",d.pagador==="yo_mitad"?`Mitad y mitad · ${R==="Tu roomie"?"tu roomie":R} te debe ${money(d.monto/2)}`:d.pagador==="roomie_mitad"?`Mitad y mitad · le debes ${money(d.monto/2)}`:"Todo es tuyo"],
       ["Método",d.pagador==="roomie_mitad"?"No salió dinero tuyo":(d.metodo||"tarjeta")==="tarjeta"?"Tarjeta":"Efectivo/débito"]];
+  }else if(t==="ingreso"){
+    const f=fuentes().find(x=>x.id===d.fuente);
+    rows=[["Monto",money(d.monto)],["Tipo",f?(f.clase==="fijo"?"Ingreso fijo":"Ingreso variable"):"Ingreso extra"],["Fecha",fday(d.ts)]];
   }else if(t==="pago_tarjeta"){
     rows=[["Monto",money(d.monto)],["Tipo","Pago a tarjeta"],["Fecha y hora",when]];
   }else{
@@ -783,13 +920,18 @@ function sheetDetail(id){
   }
   let armed=false,timer=null;
   onClose=()=>clearTimeout(timer);
-  openSheet(t==="gasto"?(d.nota||catName(d.cat)):t==="pago_tarjeta"?"Pago a tarjeta":"Ajuste de cuentas",`
+  openSheet(t==="gasto"?(d.nota||catName(d.cat)):t==="ingreso"?(d.nombre||"Ingreso"):t==="pago_tarjeta"?"Pago a tarjeta":"Ajuste de cuentas",`
     <dl class="dl">${rows.map(r=>`<div><dt>${r[0]}</dt><dd class="num">${r[1]}</dd></div>`).join("")}</dl>
+    ${t==="ingreso"?`<button class="btn btn-outline btn-block" id="dEdit">Cambiar monto</button>`:""}
     <button class="del" id="dDel">Borrar movimiento</button>`,()=>{
+    if(t==="ingreso")$("dEdit").onclick=()=>{clearTimeout(timer);onClose=null;sheetMoney({title:d.nombre||"Ingreso",prefill:d.monto,okToast:"Ingreso actualizado",onSave:m=>putDoc({...d,monto:m})});};
     $("dDel").onclick=()=>{
       if(!armed){armed=true;$("dDel").classList.add("armed");$("dDel").textContent="Toca otra vez para borrar";
         timer=setTimeout(()=>{armed=false;const b=$("dDel");if(b){b.classList.remove("armed");b.textContent="Borrar movimiento";}},4000);return;}
-      clearTimeout(timer);delDoc(id);closeSheet();toast("Movimiento borrado");
+      clearTimeout(timer);
+      // los ingresos con fecha de una fuente se marcan como omitidos para que no se vuelvan a registrar solos
+      if(t==="ingreso"&&d.fuente)putDoc({...d,omitido:true});else delDoc(id);
+      closeSheet();toast("Movimiento borrado");
     };
   });
 }
@@ -819,6 +961,12 @@ document.addEventListener("click",e=>{
     sugs:[["Todo",debt],["Para no generar intereses",ci?ci.falta:0],["Cargos de esta semana",r2(cardCharges(ws,ws+7*DAY))]],okToast:"Pago registrado",
     onSave:m=>putDoc({id:newId("p"),tipo:"pago_tarjeta",monto:m,ts:Date.now()})});}
   if(a==="ajustes")return sheetCard();
+  if(a==="fuente")return sheetFuente(el.dataset.f);
+  if(a==="regvar"){const f=fuentes().find(x=>x.id===el.dataset.f),d=f&&lastPay(f);if(!d)return;
+    return sheetMoney({title:f.nombre,info:`¿Cuánto te llegó el ${fday(d)}?`,prefill:0,sugs:[["Igual que la vez pasada",lastMonto(f)]],okToast:"Ingreso registrado",
+      onSave:m=>putDoc({id:payId(f,d),tipo:"ingreso",fuente:f.id,nombre:f.nombre,monto:m,ts:d.getTime()+9*3600e3})});}
+  if(a==="extra")return sheetMoney({title:"Ingreso extra",info:"Dinero que te llegó fuera de tus ingresos de siempre.",okToast:"Ingreso registrado",
+    onSave:m=>putDoc({id:newId("i"),tipo:"ingreso",fuente:null,nombre:"Ingreso extra",monto:m,ts:Date.now()})});
   if(a==="cardstart"){
     const n=parseMoney($("cardStart").value);
     if(!(n>=0)){$("cardStartErr").textContent="Escribe el saldo actual. Puede ser 0.";return;}
@@ -850,12 +998,13 @@ if(fixCard()){pending.add("config");lsSave();}
 setSync("local");
 // Datos del Atajo de Wallet: ?monto=…&comercio=… (si el enlace los trae)
 (function(){try{const q=new URLSearchParams(location.search);const m=q.get("monto");if(location.search)history.replaceState(null,"",location.pathname+location.hash);if(m){const n=parseMoney(m);if(n>0){go("inicio");setTimeout(()=>sheetGasto({monto:n,comercio:(q.get("comercio")||"").slice(0,80)}),60);}}}catch(e){}})();
+if(!(window.claude&&claude.use)){ready=true;autoIngresos();renderAll();}
 if(window.claude&&claude.use){
   $("sync").querySelector("span").textContent="Conectando con tu cuenta…";
   initStore();
   claude.use("sample").then(s=>{if(s){sampleFn=s;renderInicio();}}).catch(()=>{});
 }
-setInterval(()=>{if(!$("overlay").classList.contains("open"))renderInicio();},60000);
+setInterval(()=>{autoIngresos();if(!$("overlay").classList.contains("open"))renderAll();},60000);
 </script>
 
 </body>
