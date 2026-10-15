@@ -6,6 +6,14 @@ en una base de datos en **Supabase** (gratis). Con eso se pueden hacer las tres 
 
 ---
 
+## Estado
+
+- [x] Parte 1: proyecto de Supabase creado (`drhsbrauoymkiijucjnt`).
+- [x] Parte 2: la app inicia sesión y sincroniza (Ajustes → Cuenta en la nube). Falta correr `supabase/setup.sql`.
+- [x] Parte 3: widget de Scriptable (Ajustes → Widget y Wallet → Copiar script del widget).
+- [ ] Parte 4: notificaciones — pendiente.
+- [x] Parte 5: Wallet sin abrir la app (función `wallet_gasto`; los gastos llegan "por clasificar").
+
 ## Parte 1 — Lo que haces tú (unos 15 min)
 
 1. Entra a **supabase.com** y crea una cuenta gratis (puedes entrar con GitHub).

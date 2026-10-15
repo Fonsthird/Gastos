@@ -349,15 +349,18 @@ function setSync(s){
   el.querySelector("span").textContent=s==="cloud"?"Sincronizado en tu cuenta":s==="offline"?"Sin conexión: guardado en este dispositivo":"Guardado solo en este dispositivo";
 }
 const newId=p=>p+Date.now()+Math.random().toString(36).slice(2,6);
-function putDoc(d){S.docs=S.docs.filter(x=>x.id!==d.id);S.docs.push(d);pending.add(d.id);lsSave();renderAll();flush();}
-function delDoc(id){S.docs=S.docs.filter(x=>x.id!==id);pending.delete(id);pendingDel.add(id);lsSave();renderAll();flush();}
-function saveCfg(){pending.add("config");lsSave();renderAll();flush();}
+let localRev=0; // sube con cada cambio local; evita que una descarga vieja de la nube pise lo recién guardado
+function putDoc(d){localRev++;S.docs=S.docs.filter(x=>x.id!==d.id);S.docs.push(d);pending.add(d.id);lsSave();renderAll();flush();}
+function delDoc(id){localRev++;S.docs=S.docs.filter(x=>x.id!==id);pending.delete(id);pendingDel.add(id);lsSave();renderAll();flush();}
+function saveCfg(){localRev++;pending.add("config");lsSave();renderAll();flush();}
 
-async function flush(){
-  if(!store||flushing)return;
-  if(!pending.size&&!pendingDel.size){setSync("cloud");return;}
+let flushP=null;
+function flush(){
+  if(!store)return Promise.resolve();
+  if(flushing)return flushP;
+  if(!pending.size&&!pendingDel.size){setSync("cloud");return Promise.resolve();}
   flushing=true;
-  try{
+  return flushP=(async()=>{try{
     for(const id of [...pending]){
       if(id==="config")await store.cfg(S.cfg);
       else{const d=S.docs.find(x=>x.id===id);if(d)await store.put(d);}
@@ -366,7 +369,7 @@ async function flush(){
     for(const id of [...pendingDel]){await store.del(id);pendingDel.delete(id);}
     setSync("cloud");
   }catch(e){setSync("offline");}
-  finally{flushing=false;lsSave();}
+  finally{flushing=false;lsSave();}})();
 }
 
 async function initStore(){
@@ -388,7 +391,144 @@ async function initStore(){
     if(pending.size||pendingDel.size)flush();else setSync("cloud");
   },()=>setSync("offline"));
 }
-window.addEventListener("online",flush);
+/* ===================== nube (Supabase) =====================
+   Tus datos se guardan en el teléfono y, si inicias sesión, también en Supabase.
+   Tablas: movimientos(user_id,id,data) y config(user_id,data); ver supabase/setup.sql. */
+const SB_URL="https://drhsbrauoymkiijucjnt.supabase.co",SB_KEY="sb_publishable_3JHmUf6ZAxVMQ0-oPCoHAg_Yd4zlMRu";
+const APP_URL="https://fonsthird.github.io/Gastos/";
+let sb=null,sbUser=null,sbToken=null,pulling=false,cloudMsg="",cloudBusy=false;
+function loadCloud(){
+  const sc=document.createElement("script");
+  sc.src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0/dist/umd/supabase.js";
+  sc.onload=initCloud;sc.onerror=()=>{cloudMsg="No se pudo conectar con la nube. Revisa tu internet.";renderAjustes(true);};
+  document.head.appendChild(sc);
+}
+function initCloud(){
+  try{sb=supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:true,autoRefreshToken:true,storageKey:"gastos-sb-auth"}});}catch(e){return;}
+  sb.auth.onAuthStateChange((ev,session)=>{ // no llamar a Supabase dentro de este aviso: se hace en el siguiente ciclo
+    const u=session&&session.user;
+    if(u&&(!sbUser||sbUser.id!==u.id))setTimeout(()=>startCloud(u),0);
+    else if(!u&&sbUser)setTimeout(stopCloud,0);
+  });
+  renderAjustes(true);
+}
+async function startCloud(u){
+  sbUser=u;const uid=u.id;
+  const ok=r=>{if(r.error)throw r.error;return r.data;};
+  const now=()=>new Date().toISOString();
+  store={
+    put:async d=>ok(await sb.from("movimientos").upsert({user_id:uid,id:d.id,data:d,updated_at:now()})),
+    del:async id=>ok(await sb.from("movimientos").delete().eq("user_id",uid).eq("id",id)),
+    cfg:async c=>ok(await sb.from("config").upsert({user_id:uid,data:c,updated_at:now()}))
+  };
+  $("sync").querySelector("span").textContent="Conectando con tu cuenta…";
+  let first=true;try{first=localStorage.getItem("gastos-sb-uid")!==uid;}catch(e){}
+  try{sbToken=localStorage.getItem("gastos-sb-token-"+uid);}catch(e){}
+  await pull(first);
+  sb.from("claves").select("token").maybeSingle().then(r=>{if(!r.error){sbToken=r.data?r.data.token:null;try{sbToken?localStorage.setItem("gastos-sb-token-"+uid,sbToken):localStorage.removeItem("gastos-sb-token-"+uid);}catch(e){}renderAjustes();}});
+  renderAjustes(true);
+}
+function stopCloud(){sbUser=null;sbToken=null;store=null;setSync("local");renderAjustes(true);}
+// Baja todo de la nube y lo junta con lo del teléfono. first: primera vez de esta cuenta en este teléfono, sube lo local que falte.
+async function pull(first){
+  if(!sbUser||pulling)return;pulling=true;
+  try{
+    await flush();
+    const rev=localRev,rows=[];
+    for(let from=0;;from+=1000){
+      const r=await sb.from("movimientos").select("data").order("id").range(from,from+999);if(r.error)throw r.error;
+      rows.push(...r.data);if(r.data.length<1000)break;
+    }
+    const rc=await sb.from("config").select("data").maybeSingle();if(rc.error)throw rc.error;
+    if(rev!==localRev){pulling=false;setTimeout(()=>pull(first),300);return;}
+    const map=new Map();
+    rows.forEach(r=>{const v=r.data;if(v&&typeof v.monto==="number"&&!pendingDel.has(v.id))map.set(v.id,v);});
+    S.docs.forEach(d=>{if(pending.has(d.id)||(first&&!map.has(d.id))){map.set(d.id,d);pending.add(d.id);}});
+    const cfg=rc.data&&rc.data.data;
+    if(!pending.has("config")){if(cfg){S.cfg={limit:0,roomie:"Roomie",card:null,...cfg};if(fixCard())pending.add("config");}else pending.add("config");}
+    S.docs=[...map.values()];
+    try{localStorage.setItem("gastos-sb-uid",sbUser.id);}catch(e){}
+    ready=true;autoIngresos();lsSave();renderAll();
+    if(pending.size||pendingDel.size)await flush();else setSync("cloud");
+  }catch(e){setSync("offline");}
+  finally{pulling=false;}
+}
+const authErr=e=>{const m=(e&&e.message)||"";
+  return /invalid login/i.test(m)?"Correo o contraseña incorrectos.":/not confirmed/i.test(m)?"Primero confirma tu correo con el enlace que te mandamos.":/already registered|already exists/i.test(m)?"Ese correo ya tiene cuenta. Toca Entrar.":/password/i.test(m)&&/6|characters|short/i.test(m)?"La contraseña debe tener al menos 6 caracteres.":/rate|too many/i.test(m)?"Demasiados intentos. Espera un momento.":/fetch|network/i.test(m)?"Sin conexión. Revisa tu internet.":"No se pudo: "+m;};
+async function cloudAuth(kind){
+  if(!sb||cloudBusy)return;
+  const em=($("cEmail")||{}).value,pw=($("cPass")||{}).value;
+  if(kind!=="out"&&(!em||!/.+@.+\..+/.test(em.trim()))){cloudMsg="Escribe tu correo.";return renderAjustes(true);}
+  if(kind!=="out"&&!(pw&&pw.length>=6)){cloudMsg="La contraseña debe tener al menos 6 caracteres.";return renderAjustes(true);}
+  cloudBusy=true;cloudMsg=kind==="out"?"":"Un momento…";renderAjustes(true);
+  try{
+    if(kind==="in"){const r=await sb.auth.signInWithPassword({email:em.trim(),password:pw});if(r.error)throw r.error;cloudMsg="";toast("Sesión iniciada");}
+    else if(kind==="up"){const r=await sb.auth.signUp({email:em.trim(),password:pw,options:{emailRedirectTo:APP_URL}});if(r.error)throw r.error;
+      cloudMsg=r.data.session?"":"Te mandamos un correo. Toca el enlace para confirmar y luego vuelve aquí y toca Entrar.";}
+    else{await sb.auth.signOut();cloudMsg="";toast("Sesión cerrada. Tus datos siguen en este teléfono.");}
+  }catch(e){cloudMsg=authErr(e);}
+  cloudBusy=false;renderAjustes(true);
+}
+async function makeToken(){
+  if(!sbUser)return;
+  const a=new Uint8Array(24);crypto.getRandomValues(a);const t="gk_"+[...a].map(x=>x.toString(16).padStart(2,"0")).join("");
+  const r=await sb.from("claves").upsert({user_id:sbUser.id,token:t});
+  if(r.error){toast("No se pudo crear la clave");return;}
+  sbToken=t;try{localStorage.setItem("gastos-sb-token-"+sbUser.id,t);}catch(e){}renderAjustes(true);toast("Clave creada");
+}
+function widgetScript(){
+  return `// Widget de Gastos para Scriptable. Pégalo completo en un script nuevo.
+const URL = "${SB_URL}", KEY = "${SB_KEY}", TOKEN = "${sbToken}", APP = "${APP_URL}";
+const DAY = 864e5;
+const money = n => "$" + Math.round(n).toLocaleString("es-MX");
+function weekStart() { const x = new Date(); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x.getTime(); }
+const dim = (y, m) => new Date(y, m + 1, 0).getDate();
+const onDay = (y, m, d) => { const a = new Date(y, m, 1); return new Date(a.getFullYear(), a.getMonth(), Math.min(d, dim(a.getFullYear(), a.getMonth()))); };
+function lastOn(day) { const t = new Date(); t.setHours(0, 0, 0, 0); let d = onDay(t.getFullYear(), t.getMonth(), day); if (d > t) d = onDay(t.getFullYear(), t.getMonth() - 1, day); return d; }
+function daysTo(day) { const t = new Date(); t.setHours(0, 0, 0, 0); let d = onDay(t.getFullYear(), t.getMonth(), day); if (d < t) d = onDay(t.getFullYear(), t.getMonth() + 1, day); return Math.round((d - t) / DAY); }
+
+let d = null;
+try {
+  const r = new Request(URL + "/rest/v1/rpc/widget_datos");
+  r.method = "POST"; r.headers = { apikey: KEY, "Content-Type": "application/json" };
+  r.body = JSON.stringify({ p_token: TOKEN });
+  d = await r.loadJSON();
+} catch (e) {}
+
+const w = new ListWidget();
+w.backgroundColor = new Color("#141414"); w.url = APP; w.setPadding(14, 14, 14, 14);
+const txt = (s, size, color, bold) => { const t = w.addText(s); t.font = bold ? Font.boldSystemFont(size) : Font.mediumSystemFont(size); t.textColor = new Color(color); t.minimumScaleFactor = 0.6; t.lineLimit = 1; return t; };
+
+if (!d || !d.config) {
+  txt("GASTOS", 11, "#A9A49E", true); w.addSpacer(6); txt("No se pudo cargar", 14, "#F4F2EF", false);
+} else {
+  const c = d.config, movs = (d.movs || []).filter(m => !m.omitido), tipo = m => m.tipo || "gasto";
+  const mine = g => (g.pagador === "yo_mitad" || g.pagador === "roomie_mitad") ? g.monto / 2 : g.monto;
+  const ws = weekStart();
+  const spent = movs.filter(m => tipo(m) === "gasto" && m.ts >= ws && m.ts < ws + 7 * DAY && m.cat !== "servicios").reduce((s, g) => s + mine(g), 0);
+  const L = c.limit || 0;
+  txt("ESTA SEMANA", 11, "#A9A49E", true);
+  if (L) { const rest = L - spent; txt((rest < 0 ? "−" : "") + money(Math.abs(rest)), 26, rest >= 0 ? "#D5E985" : "#FF8F8F", true); txt(rest >= 0 ? "te quedan de " + money(L) : "te pasaste de " + money(L), 12, "#A9A49E", false); }
+  else { txt(money(spent), 26, "#F4F2EF", true); txt("llevas gastado", 12, "#A9A49E", false); }
+  w.addSpacer();
+  const k = c.card;
+  if (k && k.alCorte && k.corteDia) {
+    const lc = lastOn(k.corteDia).getTime();
+    const paid = movs.filter(m => tipo(m) === "pago_tarjeta" && m.ts >= lc).reduce((s, m) => s + m.monto, 0);
+    const falta = Math.max(k.alCorte - paid, 0);
+    txt("TARJETA", 11, "#A9A49E", true);
+    if (falta <= 0.5) txt("Cubierto", 16, "#D5E985", true);
+    else { const n = k.pagoDia ? daysTo(k.pagoDia) : null; txt(money(falta), 16, n != null && n <= 5 ? "#FF8F8F" : "#F4F2EF", true); if (n != null) txt(n === 0 ? "pagar hoy" : n === 1 ? "pagar mañana" : "pagar en " + n + " días", 12, "#A9A49E", false); }
+  }
+}
+w.refreshAfterDate = new Date(Date.now() + 30 * 60e3);
+Script.setWidget(w);
+if (config.runsInApp) await w.presentSmall();
+Script.complete();
+`;
+}
+async function copyText(t,msg){try{await navigator.clipboard.writeText(t);toast(msg);}catch(e){toast("No se pudo copiar");}}
+window.addEventListener("online",()=>{flush();pull();});
 window.addEventListener("offline",()=>{if(store)setSync("offline");});
 setInterval(()=>{if(pending.size||pendingDel.size)flush();},30000);
 
@@ -470,7 +610,7 @@ function rowHTML(d,ctx){
       meta=`${who} · total ${money(d.monto)}`;
       right=`<b class="num">${money(d.monto/2)}</b><small class="${d.pagador==="yo_mitad"?"pos":"neg"}">${d.pagador==="yo_mitad"?"te debe":"le debes"}</small>`;
     }else{
-      meta=`${catName(d.cat)} · ${fhm(d.ts)}${who?" · "+who:""}`;
+      meta=`${d.porClasificar?"Por clasificar":catName(d.cat)} · ${fhm(d.ts)}${who?" · "+who:""}`;
       right=`<b class="num">${money(mine(d))}</b>${sh?`<small class="num">de ${money(d.monto)}</small>`:""}`;
     }
     return `<button class="item" data-id="${d.id}"><span class="ico">${svg(catIcon(d.cat))}</span><span class="tx"><span class="n"><span>${esc(d.nota||catName(d.cat))}</span>${sh&&ctx!=="roomie"?'<em class="half" style="font-style:normal">½</em>':""}</span><span class="m">${meta}</span></span><span class="a">${right}</span></button>`;
@@ -564,6 +704,7 @@ function renderInicio(){
 
   $("s-inicio").innerHTML=`
     <div class="head"><div><h1>${S.cfg.nombre?"Hola, "+esc(S.cfg.nombre):"Esta semana"}</h1><div class="sub">${S.cfg.nombre?"Semana del ":""}${fd(ws)} al ${fd(ws+6*DAY)}</div></div><div class="head-actions"><button class="icon-btn" data-go="ajustes" aria-label="Ajustes">${svg("gear",20)}</button>${addBtn}</div></div>
+    ${porCls()}
     <button class="btn btn-outline btn-tall" data-act="wallet" style="width:100%">${svg("card",20)}Pegar gasto de Wallet</button>
     ${ask}
     ${main}
@@ -763,9 +904,36 @@ function renderAjustes(force){
     <div class="card" style="gap:0;padding-top:8px;padding-bottom:8px">
       <button class="link-row" data-go="ingresos"><span>Ingresos<br><small>${fuentes().length?fuentes().map(f=>esc(f.nombre)).join(", "):"Sueldo, viáticos y su frecuencia"}</small></span>${svg("chev",18)}</button>
       <button class="link-row" data-act="ajustes"><span>Tarjeta<br><small>${c.card?`Corte día ${c.card.corteDia||"—"} · pago día ${c.card.pagoDia||"—"}`:"Saldo, día de corte y de pago"}</small></span>${svg("chev",18)}</button></div>
+    ${cloudCard()}
     <div class="card" style="gap:6px"><h2>Tus datos</h2>
-      <div class="p14">${sync==="cloud"?"Se guardan en tu cuenta y se sincronizan entre tus dispositivos.":"Se guardan en este dispositivo."} Tienes ${S.docs.filter(d=>!d.omitido).length} movimientos registrados.</div></div>`;
+      <div class="p14">${sbUser?(sync==="cloud"?"Se guardan en este teléfono y en tu cuenta en la nube.":"Se guardan en este teléfono; se suben a la nube cuando haya conexión."):"Se guardan solo en este teléfono."} Tienes ${S.docs.filter(d=>!d.omitido).length} movimientos registrados.</div></div>`;
   restoreFocus(keep);
+}
+
+function cloudCard(){
+  if(window.claude&&claude.use)return "";
+  const msg=cloudMsg?`<p class="hint" style="margin:0;color:var(--ink);font-weight:600">${esc(cloudMsg)}</p>`:"";
+  if(!sb)return `<div class="card" style="gap:6px"><h2>Cuenta en la nube</h2><div class="p14">${cloudMsg?esc(cloudMsg):"Cargando…"}</div></div>`;
+  if(!sbUser)return `<div class="card"><h2>Cuenta en la nube</h2>
+      <div class="p14">Respalda tus datos y úsalos para el widget y los gastos de Wallet. Lo que ya tienes se sube la primera vez.</div>
+      <div class="fgroup"><label for="cEmail" class="fl">Correo</label><input id="cEmail" class="field" type="email" autocomplete="email" autocapitalize="off" inputmode="email"></div>
+      <div class="fgroup"><label for="cPass" class="fl">Contraseña</label><input id="cPass" class="field" type="password" autocomplete="current-password" placeholder="Mínimo 6 caracteres"></div>
+      ${msg}
+      <div class="grid2"><button class="btn btn-primary btn-tall" data-act="cin" ${cloudBusy?"disabled":""}>Entrar</button><button class="btn btn-outline btn-tall" data-act="cup" ${cloudBusy?"disabled":""}>Crear cuenta</button></div></div>`;
+  const tok=sbToken?`<div class="p14">Copia el script y pégalo en la app Scriptable para el widget. Para Wallet, en tu atajo usa estos datos en <strong style="color:var(--ink)">Get Contents of URL</strong>.</div>
+      <button class="btn btn-outline btn-tall" data-act="cwidget">Copiar script del widget</button>
+      <div class="card" style="background:var(--bg);padding:4px 16px;gap:0">
+        <button class="link-row" data-act="ccopy" data-v="url"><span>Dirección (URL)<br><small>…/rest/v1/rpc/wallet_gasto</small></span><small>Copiar</small></button>
+        <button class="link-row" data-act="ccopy" data-v="key"><span>apikey<br><small>${SB_KEY.slice(0,18)}…</small></span><small>Copiar</small></button>
+        <button class="link-row" data-act="ccopy" data-v="tok"><span>Tu clave (p_token)<br><small>${esc(sbToken.slice(0,12))}…</small></span><small>Copiar</small></button></div>
+      <p class="hint" style="margin:0">Tu clave es privada: con ella se pueden ver tus totales y agregar gastos. Si la compartes por error, crea una nueva.</p>
+      <button class="btn btn-soft" data-act="ctoken">Crear clave nueva</button>`
+    :`<div class="p14">Crea tu clave personal para el widget de Scriptable y para registrar gastos de Wallet sin abrir la app.</div>
+      <button class="btn btn-primary btn-tall" data-act="ctoken">Crear mi clave</button>`;
+  return `<div class="card"><h2>Cuenta en la nube</h2>
+      <div class="p14">Conectado como <strong style="color:var(--ink)">${esc(sbUser.email||"")}</strong>. ${sync==="cloud"?"Todo está sincronizado.":"Sincronizando…"}</div>
+      <button class="btn btn-soft" data-act="cout">Cerrar sesión</button></div>
+    <div class="card"><h2>Widget y Wallet</h2>${tok}</div>`;
 }
 
 /* ===================== navegación ===================== */
@@ -840,10 +1008,12 @@ const focusLater=id=>setTimeout(()=>{const i=$(id);if(i)i.focus();},260);
 
 /* --- registrar gasto --- */
 function sheetGasto(pre={}){
-  let cat=null,pag="yo",met="tarjeta";
+  const ed=pre.edit||null; // gasto de Wallet "por clasificar"
+  if(ed)pre={monto:ed.monto,comercio:ed.nota||""};
+  let cat=null,pag=ed?ed.pagador||"yo":"yo",met=ed?ed.metodo||"tarjeta":"tarjeta";
   const R=esc(rName()==="Roomie"?"mi roomie":rName());
-  openSheet("Nuevo gasto",`
-    ${pre.monto?`<div class="detected">${svg("check",18,2.4)}Pago detectado. Elige categoría y quién pagó.</div>`:""}
+  openSheet(ed?"Clasificar gasto":"Nuevo gasto",`
+    ${ed?`<div class="detected">${svg("check",18,2.4)}Gasto de Wallet del ${fday(ed.ts)} a las ${fhm(ed.ts)}. Elige categoría y quién pagó.</div>`:pre.monto?`<div class="detected">${svg("check",18,2.4)}Pago detectado. Elige categoría y quién pagó.</div>`:""}
     <div class="fgroup"><label for="gAmt" class="fl">Monto total</label>
       <input id="gAmt" class="amount num" inputmode="decimal" autocomplete="off" placeholder="$0.00" value="${pre.monto?"$"+pre.monto.toFixed(2):""}">
       <p class="err" id="gErr"></p>
@@ -861,7 +1031,7 @@ function sheetGasto(pre={}){
     <div class="fgroup g8" id="gMetWrap"><div class="fl" id="metLbl">¿Con qué pagaste?</div>
       <div class="seg" id="gMet" role="group" aria-labelledby="metLbl"><button data-v="tarjeta" aria-pressed="true">Tarjeta</button><button data-v="otro" aria-pressed="false">Efectivo/débito</button></div></div>
     <div class="mine" id="gMine" hidden><span>Tu parte. Es la que cuenta para tu límite.</span><b class="num" id="gMineV"></b></div>
-    <button class="btn btn-primary btn-block" id="gSave" disabled>Registrar gasto</button>`,()=>{
+    <button class="btn btn-primary btn-block" id="gSave" disabled>${ed?"Guardar gasto":"Registrar gasto"}</button>`,()=>{
     const upd=()=>{
       const n=parseMoney($("gAmt").value);
       $("gSave").disabled=!(n>0&&cat);
@@ -883,13 +1053,21 @@ function sheetGasto(pre={}){
       const n=parseMoney($("gAmt").value);
       if(!(n>0)){$("gErr").textContent="Escribe un monto mayor a 0";$("gAmt").focus();return;}
       if(!cat)return;
-      putDoc({id:newId("g"),tipo:"gasto",monto:r2(n),cat,nota:$("gNote").value.trim().slice(0,80),ts:Date.now(),pagador:pag,metodo:pag==="roomie_mitad"?"otro":met});
-      closeSheet();toast("Gasto registrado");
+      const g={tipo:"gasto",monto:r2(n),cat,nota:$("gNote").value.trim().slice(0,80),pagador:pag,metodo:pag==="roomie_mitad"?"otro":met};
+      if(ed){const {porClasificar,...rest}=ed;putDoc({...rest,...g});}
+      else putDoc({id:newId("g"),...g,ts:Date.now()});
+      closeSheet();toast(ed?"Gasto guardado":"Gasto registrado");
     };
+    if(ed){$("gWho").querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",String(x.dataset.v===pag)));$("gMet").querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",String(x.dataset.v===met)));}
     upd();if(!pre.monto)focusLater("gAmt");
   });
 }
 
+function porCls(){
+  const a=gastos().filter(g=>g.porClasificar&&!g.omitido).sort((x,y)=>y.ts-x.ts);if(!a.length)return "";
+  return `<div class="card ask" style="gap:6px"><h2>${a.length===1?"1 gasto de Wallet por clasificar":a.length+" gastos de Wallet por clasificar"}</h2>
+    <div class="list" style="padding:0;background:transparent">${a.slice(0,5).map(g=>`<button class="item" data-act="clasificar" data-cid="${esc(g.id)}"><span class="ico">${svg("card")}</span><span class="tx"><span class="n"><span>${esc(g.nota||"Sin comercio")}</span></span><span class="m">${fday(g.ts)} · ${fhm(g.ts)}</span></span><span class="a"><b class="num">${money(g.monto)}</b><small>Clasificar</small></span></button>`).join("")}</div></div>`;
+}
 /* --- pegar el gasto que copió el atajo de Wallet ("importe | comercio") --- */
 function parseWallet(t){
   const parts=String(t||"").split("|"),n=parseMoney(parts[0]);
@@ -1007,7 +1185,7 @@ function sheetDetail(id){
   const when=`${fday(d.ts)} · ${fhm(d.ts)}`;
   let rows;
   if(t==="gasto"){
-    rows=[["Monto total",money(d.monto)],["Categoría",catName(d.cat)],["Nota",esc(d.nota||"—")],["Fecha y hora",when],
+    rows=[["Monto total",money(d.monto)],["Categoría",d.porClasificar?"Por clasificar":catName(d.cat)],["Nota",esc(d.nota||"—")],["Fecha y hora",when],
       ["Quién pagó",d.pagador==="roomie_mitad"?R:"Tú"],
       ["División",d.pagador==="yo_mitad"?`Mitad y mitad · ${R==="Tu roomie"?"tu roomie":R} te debe ${money(d.monto/2)}`:d.pagador==="roomie_mitad"?`Mitad y mitad · le debes ${money(d.monto/2)}`:"Todo es tuyo"],
       ["Método",d.pagador==="roomie_mitad"?"No salió dinero tuyo":(d.metodo||"tarjeta")==="tarjeta"?"Tarjeta":"Efectivo/débito"]];
@@ -1024,7 +1202,9 @@ function sheetDetail(id){
   openSheet(t==="gasto"?(d.nota||catName(d.cat)):t==="ingreso"?(d.nombre||"Ingreso"):t==="pago_tarjeta"?"Pago a tarjeta":"Ajuste de cuentas",`
     <dl class="dl">${rows.map(r=>`<div><dt>${r[0]}</dt><dd class="num">${r[1]}</dd></div>`).join("")}</dl>
     ${t==="ingreso"?`<button class="btn btn-outline btn-block" id="dEdit">Cambiar monto</button>`:""}
+    ${d.porClasificar?`<button class="btn btn-primary btn-block" id="dCls">Clasificar</button>`:""}
     <button class="del" id="dDel">Borrar movimiento</button>`,()=>{
+    if(d.porClasificar)$("dCls").onclick=()=>{clearTimeout(timer);onClose=null;sheetGasto({edit:d});};
     if(t==="ingreso")$("dEdit").onclick=()=>{clearTimeout(timer);onClose=null;sheetMoney({title:d.nombre||"Ingreso",prefill:d.monto,okToast:"Ingreso actualizado",onSave:m=>putDoc({...d,monto:m})});};
     $("dDel").onclick=()=>{
       if(!armed){armed=true;$("dDel").classList.add("armed");$("dDel").textContent="Toca otra vez para borrar";
@@ -1063,6 +1243,13 @@ document.addEventListener("click",e=>{
     onSave:m=>putDoc({id:newId("p"),tipo:"pago_tarjeta",monto:m,ts:Date.now()})});}
   if(a==="ajustes")return sheetCard();
   if(a==="wallet")return pasteWallet();
+  if(a==="cin")return cloudAuth("in");
+  if(a==="cup")return cloudAuth("up");
+  if(a==="cout")return cloudAuth("out");
+  if(a==="ctoken"){if(sbToken&&!confirm("Tu clave anterior dejará de funcionar en el widget y en el atajo. ¿Crear una nueva?"))return;return makeToken();}
+  if(a==="cwidget")return copyText(widgetScript(),"Script copiado");
+  if(a==="ccopy"){const v=el.dataset.v;return copyText(v==="url"?SB_URL+"/rest/v1/rpc/wallet_gasto":v==="key"?SB_KEY:sbToken,"Copiado");}
+  if(a==="clasificar"){const d=S.docs.find(x=>x.id===el.dataset.cid);if(d)sheetGasto({edit:d});return;}
   if(a==="fuente")return sheetFuente(el.dataset.f);
   if(a==="regvar"){const f=fuentes().find(x=>x.id===el.dataset.f),d=f&&lastPay(f);if(!d)return;
     return sheetMoney({title:f.nombre,info:`¿Cuánto te llegó el ${fday(d)}?`,prefill:0,sugs:[["Igual que la vez pasada",lastMonto(f)]],okToast:"Ingreso registrado",
@@ -1092,6 +1279,7 @@ document.addEventListener("click",e=>{
 });
 document.addEventListener("keydown",e=>{
   if(e.key!=="Enter"||!e.target||e.target.tagName!=="INPUT")return;
+  if(e.target.id==="cEmail"||e.target.id==="cPass"){e.preventDefault();cloudAuth("in");return;}
   const map={limite:"aSave",aFijos:"aSave",aNom:"aSave",aRoom:"aSave",cardStart:null,rnIn:"rnSave",mAmt:"mSave"};
   if(e.target.id==="cardStart"){document.querySelector('[data-act="cardstart"]').click();return;}
   const b=map[e.target.id]&&$(map[e.target.id]);if(b){e.preventDefault();b.click();}
@@ -1107,7 +1295,7 @@ renderAll();go("inicio");
 setSync("local");
 // Datos del Atajo de Wallet: ?monto=…&comercio=… (si el enlace los trae)
 (function(){try{const q=new URLSearchParams(location.search);const m=q.get("monto");if(location.search)history.replaceState(null,"",location.pathname+location.hash);if(m){const n=parseMoney(m);if(n>0){go("inicio");setTimeout(()=>sheetGasto({monto:n,comercio:(q.get("comercio")||"").slice(0,80)}),60);}}}catch(e){}})();
-if(!(window.claude&&claude.use)){ready=true;autoIngresos();renderAll();}
+if(!(window.claude&&claude.use)){ready=true;autoIngresos();renderAll();loadCloud();}
 if(window.claude&&claude.use){
   $("sync").querySelector("span").textContent="Conectando con tu cuenta…";
   initStore();
@@ -1135,9 +1323,10 @@ document.addEventListener("visibilitychange",()=>{
   if(document.visibilityState==="hidden"){hiddenAt=Date.now();return;}
   const keepSheet=$("overlay").classList.contains("open")&&Date.now()-hiddenAt<2*60e3;
   if(!keepSheet){closeSheet();filter="semana";renderAll();go("inicio");}else renderAll();
-  checkUpdate();
+  checkUpdate();pull();
 });
 setInterval(()=>{autoIngresos();if(!$("overlay").classList.contains("open"))renderAll();},60000);
+setInterval(()=>{if(document.visibilityState==="visible")pull();},120000);
 </script>
 
 </body>
