@@ -510,11 +510,14 @@ function renderInicio(){
   let tChip,tVal,tHint;
   if(debt==null){tChip='<span class="chip yellow">Configurar</span>';tVal="—";tHint="Escribe tu saldo";}
   else{
-    tVal=money(Math.max(debt,0));tHint="Deuda estimada";
+    tVal=money(Math.max(debt,0));tHint="Deuda total";
     if(debt<=0.5)tChip='<span class="chip lime">En ceros</span>';
     else if(ci&&ci.falta<=0.5)tChip='<span class="chip lime">Cubierto</span>';
-    else if(pg)tChip=`<span class="chip ${pg.days<=5?"coral":"plain"}">Pago ${inDays(pg.days)}</span>`;
-    else tChip="";
+    else{
+      // lo urgente es el saldo del corte; la deuda total incluye compras que van al siguiente corte
+      if(ci){tVal=money(ci.falta);tHint=`Para no generar intereses · deuda total ${money(debt)}`;}
+      tChip=pg?`<span class="chip ${pg.days<=5?"coral":"plain"}">Pago ${inDays(pg.days)}</span>`:"";
+    }
   }
 
   // categorías
