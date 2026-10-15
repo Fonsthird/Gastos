@@ -243,6 +243,10 @@ nav.tabs button[aria-current="page"] svg{stroke:var(--yellow)}
 
 .toast{position:fixed;left:50%;bottom:calc(104px + env(safe-area-inset-bottom,0px));z-index:40;transform:translate(-50%,12px);background:var(--ink);color:var(--bg);padding:12px 18px;border-radius:999px;font-size:14px;font-weight:700;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;white-space:nowrap}
 .toast.show{opacity:1;transform:translate(-50%,0)}
+.screen.from-r{animation:fromR .22s ease}
+.screen.from-l{animation:fromL .22s ease}
+@keyframes fromR{from{transform:translateX(36px);opacity:.4}to{transform:none;opacity:1}}
+@keyframes fromL{from{transform:translateX(-36px);opacity:.4}to{transform:none;opacity:1}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}}
 </style>
 
@@ -768,11 +772,31 @@ function renderAjustes(force){
 const TABS=[["inicio","Inicio","casa"],["movimientos","Movimientos","list"],["ingresos","Ingresos","cash"],["roomie","Roomie","people"],["tarjeta","Tarjeta","card"]];
 let tab="inicio";
 function renderTabs(){$("tabs").innerHTML=TABS.map(t=>`<button data-tab="${t[0]}"${t[0]===tab?' aria-current="page"':""}>${svg(t[2],22)}${t[1]}</button>`).join("");}
-function go(t){
-  tab=t;[...TABS.map(x=>x[0]),"ajustes"].forEach(x=>$("s-"+x).hidden=x!==t);renderTabs();window.scrollTo(0,0);
+function go(t,dir){
+  tab=t;
+  if(dir){const el=$("s-"+t);el.classList.remove("from-r","from-l");void el.offsetWidth;el.classList.add(dir>0?"from-r":"from-l");}[...TABS.map(x=>x[0]),"ajustes"].forEach(x=>$("s-"+x).hidden=x!==t);renderTabs();window.scrollTo(0,0);
   try{history.replaceState(null,"","#"+t);}catch(e){}
 }
 function renderAll(){applyTheme();renderAjustes();renderInicio();renderMovs();renderIngresos();renderRoomie();renderTarjeta();}
+
+/* Deslizar a la izquierda o derecha para cambiar de pestaña */
+(function(){
+  let x0=0,y0=0,t0=0,on=false;
+  document.addEventListener("touchstart",e=>{
+    on=false;if(e.touches.length!==1||$("overlay").classList.contains("open"))return;
+    const t=e.target;if(t.closest&&t.closest(".filters,input,textarea,select,nav,.overlay"))return; // los filtros se desplazan de lado
+    x0=e.touches[0].clientX;y0=e.touches[0].clientY;t0=Date.now();
+    on=x0>20&&x0<window.innerWidth-20; // no choca con el gesto de regresar del iPhone
+  },{passive:true});
+  document.addEventListener("touchend",e=>{
+    if(!on)return;on=false;
+    const c=e.changedTouches[0],dx=c.clientX-x0,dy=c.clientY-y0,ms=Date.now()-t0;
+    if(Math.abs(dx)<60||Math.abs(dx)<Math.abs(dy)*1.8||ms>700)return;
+    if(tab==="ajustes"){if(dx>0)go("inicio",-1);return;}
+    const i=TABS.findIndex(x=>x[0]===tab),j=i+(dx<0?1:-1);
+    if(j>=0&&j<TABS.length)go(TABS[j][0],dx<0?1:-1);
+  },{passive:true});
+})();
 
 /* ===================== panel inferior ===================== */
 let lastFocus=null,onClose=null;
