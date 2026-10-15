@@ -596,7 +596,8 @@ function renderTarjeta(){
     <div class="stat${urgent?" alert":""}"><span class="t">Fecha límite de pago</span><span class="v">${pg?fd(pg.date):"—"}</span><span class="h${urgent?" warn":""}">${pg?inDays(pg.days):"Agrega el día en Ajustes"}</span></div></div>`;
   let cut;
   if(!ci){
-    cut=`<div class="card"><h2>Para no generar intereses</h2><div class="p14">Agrega en Ajustes de tarjeta el saldo a pagar de tu último corte y tu día de corte. Así sabrás cuánto te falta antes de la fecha límite.</div></div>`;
+    const falta=!c.alCorte&&!c.corteDia?"el saldo a pagar de tu último corte y tu día de corte":!c.alCorte?"el saldo a pagar de tu último corte":"tu día de corte";
+    cut=`<div class="card"><h2>Para no generar intereses</h2><div class="p14">Agrega en Ajustes de tarjeta ${falta}. Así sabrás cuánto te falta antes de la fecha límite.</div></div>`;
   }else if(ci.falta<=0.5){
     cut=`<div class="card lime"><div class="card-top"><h2>Para no generar intereses</h2><span class="badge">Cubierto</span></div>
       <div class="desc">Ya pagaste el saldo del corte del ${fd(ci.lc)}. Este mes no generas intereses.</div>
@@ -737,8 +738,8 @@ function sheetCard(){
       <p class="err" id="cCutErr"></p>
       <p class="hint">Es el "pago para no generar intereses". Actualízalo cada mes después del corte.</p></div>
     <div class="grid2">
-      <div class="fgroup"><label for="cCorte" class="fl">Día de corte</label><input id="cCorte" class="field num" inputmode="numeric" autocomplete="off" placeholder="8" value="${c.corteDia||""}"><p class="err" id="cCorteErr"></p></div>
-      <div class="fgroup"><label for="cPago" class="fl">Día límite de pago</label><input id="cPago" class="field num" inputmode="numeric" autocomplete="off" placeholder="18" value="${c.pagoDia||""}"><p class="err" id="cPagoErr"></p></div>
+      <div class="fgroup"><label for="cCorte" class="fl">Día de corte</label><input id="cCorte" class="field num" inputmode="numeric" autocomplete="off" placeholder="8" value="${c.corteDia||8}"><p class="err" id="cCorteErr"></p></div>
+      <div class="fgroup"><label for="cPago" class="fl">Día límite de pago</label><input id="cPago" class="field num" inputmode="numeric" autocomplete="off" placeholder="18" value="${c.pagoDia||18}"><p class="err" id="cPagoErr"></p></div>
     </div>
     <button class="btn btn-primary btn-block" id="cSave">Guardar tarjeta</button>`,()=>{
     $("cSave").onclick=()=>{
@@ -749,6 +750,7 @@ function sheetCard(){
       if(!(b>=0)){$("cBaseErr").textContent="Escribe el saldo actual. Puede ser 0.";bad=true;}
       if(cutV&&!(cut>=0)){$("cCutErr").textContent="Escribe un monto válido o déjalo vacío";bad=true;}
       if(co&&!(Number.isInteger(coN)&&coN>=1&&coN<=31)){$("cCorteErr").textContent="El día debe ser entre 1 y 31";bad=true;}
+      if(cutV&&!co){$("cCorteErr").textContent="Escribe el día de corte para calcular lo que te falta";bad=true;}
       if(pa&&!(Number.isInteger(paN)&&paN>=1&&paN<=31)){$("cPagoErr").textContent="El día debe ser entre 1 y 31";bad=true;}
       if(bad)return;
       const newCut=cutV?r2(cut):null;
@@ -815,7 +817,7 @@ document.addEventListener("click",e=>{
   if(a==="cardstart"){
     const n=parseMoney($("cardStart").value);
     if(!(n>=0)){$("cardStartErr").textContent="Escribe el saldo actual. Puede ser 0.";return;}
-    S.cfg.card={base:r2(n),baseTs:Date.now(),alCorte:null,alCorteTs:null,corteDia:null,pagoDia:null};saveCfg();toast("Tarjeta guardada");
+    S.cfg.card={base:r2(n),baseTs:Date.now(),alCorte:null,alCorteTs:null,corteDia:8,pagoDia:18};saveCfg();toast("Tarjeta guardada");
   }
 });
 document.addEventListener("click",e=>{if(e.target.id==="fbBtn")analyze();});
@@ -836,6 +838,8 @@ let tt;function toast(m){const t=$("toast");t.textContent=m;t.classList.add("sho
 
 /* ===================== arranque ===================== */
 lsLoad();
+// Tarjetas guardadas sin día de corte o de pago: usa tu ciclo (corte 8, pago 18).
+if(S.cfg.card&&(!S.cfg.card.corteDia||!S.cfg.card.pagoDia)){S.cfg.card={...S.cfg.card,corteDia:S.cfg.card.corteDia||8,pagoDia:S.cfg.card.pagoDia||18};pending.add("config");lsSave();}
 {let start="inicio";const h=(location.hash||"").replace("#","");
   if(TABS.some(t=>t[0]===h))start=h;else{try{const s=localStorage.getItem("gastos-tab");if(TABS.some(t=>t[0]===s))start=s;}catch(e){}}
   renderAll();go(start);}
