@@ -841,7 +841,7 @@ lsLoad();
   renderAll();go(start);}
 setSync("local");
 // Datos del Atajo de Wallet: ?monto=…&comercio=… (si el enlace los trae)
-(function(){try{const q=new URLSearchParams(location.search);const m=q.get("monto");if(m){const n=parseMoney(m);if(n>0){go("inicio");setTimeout(()=>sheetGasto({monto:n,comercio:(q.get("comercio")||"").slice(0,80)}),60);}}}catch(e){}})();
+(function(){try{const q=new URLSearchParams(location.search);const m=q.get("monto");if(location.search)history.replaceState(null,"",location.pathname+location.hash);if(m){const n=parseMoney(m);if(n>0){go("inicio");setTimeout(()=>sheetGasto({monto:n,comercio:(q.get("comercio")||"").slice(0,80)}),60);}}}catch(e){}})();
 if(window.claude&&claude.use){
   $("sync").querySelector("span").textContent="Conectando con tu cuenta…";
   initStore();
