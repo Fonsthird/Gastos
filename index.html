@@ -770,7 +770,6 @@ function renderTabs(){$("tabs").innerHTML=TABS.map(t=>`<button data-tab="${t[0]}
 function go(t){
   tab=t;[...TABS.map(x=>x[0]),"ajustes"].forEach(x=>$("s-"+x).hidden=x!==t);renderTabs();window.scrollTo(0,0);
   try{history.replaceState(null,"","#"+t);}catch(e){}
-  try{localStorage.setItem("gastos-tab",t);}catch(e){}
 }
 function renderAll(){applyTheme();renderAjustes();renderInicio();renderMovs();renderIngresos();renderRoomie();renderTarjeta();}
 
@@ -1045,10 +1044,8 @@ let tt;function toast(m){const t=$("toast");t.textContent=m;t.classList.add("sho
 /* ===================== arranque ===================== */
 lsLoad();
 if(fixCard()){pending.add("config");lsSave();}
-{let start="inicio";const h=(location.hash||"").replace("#","");
-  const ok=x=>x==="ajustes"||TABS.some(t=>t[0]===x);
-  if(ok(h))start=h;else{try{const s=localStorage.getItem("gastos-tab");if(ok(s))start=s;}catch(e){}}
-  renderAll();go(start);}
+// La app siempre abre en Inicio.
+renderAll();go("inicio");
 setSync("local");
 // Datos del Atajo de Wallet: ?monto=…&comercio=… (si el enlace los trae)
 (function(){try{const q=new URLSearchParams(location.search);const m=q.get("monto");if(location.search)history.replaceState(null,"",location.pathname+location.hash);if(m){const n=parseMoney(m);if(n>0){go("inicio");setTimeout(()=>sheetGasto({monto:n,comercio:(q.get("comercio")||"").slice(0,80)}),60);}}}catch(e){}})();
@@ -1073,7 +1070,15 @@ async function checkUpdate(){
   }catch(e){}
 }
 checkUpdate();
-document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"){checkUpdate();renderAll();}});
+/* Al salir de la app y volver, empieza de nuevo en Inicio, como si se hubiera cerrado.
+   Excepción: si dejaste un panel abierto y vuelves en menos de 2 min (por ejemplo, fuiste a copiar un monto), lo conserva. */
+let hiddenAt=0;
+document.addEventListener("visibilitychange",()=>{
+  if(document.visibilityState==="hidden"){hiddenAt=Date.now();return;}
+  const keepSheet=$("overlay").classList.contains("open")&&Date.now()-hiddenAt<2*60e3;
+  if(!keepSheet){closeSheet();filter="semana";renderAll();go("inicio");}else renderAll();
+  checkUpdate();
+});
 setInterval(()=>{autoIngresos();if(!$("overlay").classList.contains("open"))renderAll();},60000);
 </script>
 
