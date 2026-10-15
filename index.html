@@ -356,7 +356,7 @@ async function initStore(){
     snap.docs.forEach(d=>{const v=d.data()||{};if(d.id==="config")cfg=v;else if(typeof v.monto==="number"&&!pendingDel.has(d.id))docs.push({...v,id:d.id});});
     const map=new Map(docs.map(d=>[d.id,d]));
     S.docs.forEach(d=>{if(pending.has(d.id))map.set(d.id,d);});
-    if(!pending.has("config")){if(cfg)S.cfg={limit:0,roomie:"Roomie",card:null,...cfg};else pending.add("config");}
+    if(!pending.has("config")){if(cfg){S.cfg={limit:0,roomie:"Roomie",card:null,...cfg};if(fixCard())pending.add("config");}else pending.add("config");}
     S.docs=[...map.values()];
     lsSave();renderAll();
     if(pending.size||pendingDel.size)flush();else setSync("cloud");
@@ -382,6 +382,11 @@ function roomieBalance(){ // positivo: tu roomie te debe
     else if(t==="gasto"&&d.pagador==="roomie_mitad")b-=d.monto/2;
     else if(t==="liq")b+=d.dir==="in"?-d.monto:d.monto;});
   return r2(b);
+}
+// Tarjetas guardadas sin día de corte o de pago: usa tu ciclo (corte 8, pago 18). Devuelve true si cambió algo.
+function fixCard(){
+  const c=S.cfg.card;if(!c||(c.corteDia&&c.pagoDia))return false;
+  S.cfg.card={...c,corteDia:c.corteDia||8,pagoDia:c.pagoDia||18};return true;
 }
 function cardDebt(){
   const c=S.cfg.card;if(!c)return null;let x=c.base||0;
@@ -838,8 +843,7 @@ let tt;function toast(m){const t=$("toast");t.textContent=m;t.classList.add("sho
 
 /* ===================== arranque ===================== */
 lsLoad();
-// Tarjetas guardadas sin día de corte o de pago: usa tu ciclo (corte 8, pago 18).
-if(S.cfg.card&&(!S.cfg.card.corteDia||!S.cfg.card.pagoDia)){S.cfg.card={...S.cfg.card,corteDia:S.cfg.card.corteDia||8,pagoDia:S.cfg.card.pagoDia||18};pending.add("config");lsSave();}
+if(fixCard()){pending.add("config");lsSave();}
 {let start="inicio";const h=(location.hash||"").replace("#","");
   if(TABS.some(t=>t[0]===h))start=h;else{try{const s=localStorage.getItem("gastos-tab");if(TABS.some(t=>t[0]===s))start=s;}catch(e){}}
   renderAll();go(start);}
